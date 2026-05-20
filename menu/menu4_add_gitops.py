@@ -4,12 +4,13 @@ import json
 import requests
 import inquirer
 import subprocess as cmd
+from urllib.parse import quote as _urlquote
 from os import chdir
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 from menu.util import component_api as _cap
 from menu.menu1_init import screen_init_value
-from menu.util.ui import draw_menu
+from menu.util.ui import draw_menu, safe_prompt, validate_k8s_name
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
 def _pick(*names):
@@ -60,7 +61,7 @@ def _safe_input_number(prompt: str) -> str:
 
 def _select_from_list(title: str, items):
     options = [inquirer.List("option", message=title, choices=items)]
-    sel = inquirer.prompt(options)
+    sel = safe_prompt(options)
     if not sel:
         return None
     return sel['option']
@@ -92,11 +93,14 @@ def menu4():
         n = int(menu_number)
         if n == 1:
             project_name = choice_project()
-            init_data, err = _load_init_json(project_name)
-            if err:
-                return_string = err
+            if project_name is None:
+                return_string = ''
             else:
-                screen_init_value(init_data)
+                init_data, err = _load_init_json(project_name)
+                if err:
+                    return_string = err
+                else:
+                    screen_init_value(init_data)
         elif n == 2:
             return_string = add_gitops_execute()
         elif n == 3:
@@ -111,7 +115,15 @@ def menu4():
 # 프로젝트 선택
 # =========================
 def choice_project():
-    project_list = os.listdir('result')
+    if not os.path.isdir('result'):
+        print('\033[91m초기화된 프로젝트가 없습니다. 메뉴 1에서 초기화를 먼저 실행하세요.\033[0m')
+        input('\033[0m계속하려면 엔터를 눌러주세요. ')
+        return None
+    project_list = [d for d in os.listdir('result') if os.path.isdir(os.path.join('result', d))]
+    if not project_list:
+        print('\033[91m초기화된 프로젝트가 없습니다. 메뉴 1에서 초기화를 먼저 실행하세요.\033[0m')
+        input('\033[0m계속하려면 엔터를 눌러주세요. ')
+        return None
     if len(project_list) > 1:
         return _select_from_list("프로젝트를 선택해주세요", project_list)
     return project_list[0]
@@ -122,6 +134,8 @@ def choice_project():
 def add_gitops_execute():
     env = {}
     project_name = choice_project()
+    if project_name is None:
+        return ''
     env['project_name'] = project_name
 
     init_data, err = _load_init_json(project_name)
@@ -131,7 +145,10 @@ def add_gitops_execute():
     env['gitea_domain'] = init_data['gitea_domain']
     env['git_cicd_auth'] = init_data['git_cicd_auth']
 
-    org_res = json.loads(get_organization(env))
+    try:
+        org_res = json.loads(get_organization(env))
+    except (requests.HTTPError, requests.ConnectionError, ValueError) as e:
+        return f"Gitea API 오류 (조직 조회 실패): {e}"
     if len(org_res) == 0:
         return "조직이 존재하지 않습니다. 조직생성후 재실행하시길 바랍니다."
 
@@ -142,7 +159,10 @@ def add_gitops_execute():
     if not env['organization_name']:
         return ''
 
-    app_res = json.loads(get_repos_in_orgs(env))
+    try:
+        app_res = json.loads(get_repos_in_orgs(env))
+    except (requests.HTTPError, requests.ConnectionError, ValueError) as e:
+        return f"Gitea API 오류 (레포 조회 실패): {e}"
     if len(app_res) == 0:
         return "어플리케이션이 존재하지 않습니다. 어플리케이션생성후 재실행하시길 바랍니다."
     applications = [a['name'] for a in app_res]
@@ -158,20 +178,20 @@ def add_gitops_execute():
 def manual_mode():
     env = {}
     project_name = choice_project()
+    if project_name is None:
+        return ''
     env['project_name'] = project_name
 
-    org = input('\033[96m조직명을 입력해주세요(예시: sample): \033[0m').strip()
-    if not org:
-        return "조직명을 입력해주세요."
-    if _is_korean(org):
-        return "한글처리는 불가능합니다."
+    org = input('\033[96m조직명을 입력해주세요(소문자·숫자·하이픈, 예시: sample): \033[0m').strip()
+    err = validate_k8s_name(org, '조직명')
+    if err:
+        return err
     env['organization_name'] = org
 
-    app = input('\033[96m어플리케이션명을 입력해주세요(예시: product-frontend): \033[0m').strip()
-    if not app:
-        return "어플리케이션명을 입력해주세요."
-    if _is_korean(app):
-        return "한글처리는 불가능합니다."
+    app = input('\033[96m어플리케이션명을 입력해주세요(소문자·숫자·하이픈, 예시: product-frontend): \033[0m').strip()
+    err = validate_k8s_name(app, '어플리케이션명')
+    if err:
+        return err
     env['application_name'] = app
 
     return choice_gitops(env)
@@ -299,11 +319,15 @@ def create_gitops_repository(env_param, env_param_dict):
     gitea_scheme = 'https' if data.get('gitea_domain', '').startswith('https://') else 'http'
     clone_url = (
         '{scheme}://{id}:{pw}@{host}/{org}-cicd/{app}-gitops.git'
-        .format(scheme=gitea_scheme, id=data["git_cicd_id"], pw=data["git_cicd_pw"],
+        .format(scheme=gitea_scheme, id=_urlquote(data["git_cicd_id"], safe=''),
+                pw=_urlquote(data["git_cicd_pw"], safe=''),
                 host=data["gitea_host_url"],
                 org=data["organization_name"], app=data["application_name"])
     )
-    cmd.run(['git', '-c', 'http.sslVerify=false', 'clone', clone_url], check=True)
+    try:
+        cmd.run(['git', '-c', 'http.sslVerify=false', 'clone', clone_url], check=True)
+    except cmd.CalledProcessError as e:
+        return f"git clone 실패 (종료코드 {e.returncode}): Gitea 접속·인증·레포 존재 여부를 확인하세요."
 
     # 3) 템플릿 루트 (실제 폴더명에 맞춰 하나만 두세요)
     TEMPLATE_ROOTS = ["./04.gitea-source"]
@@ -396,6 +420,11 @@ def create_gitops_repository(env_param, env_param_dict):
             cmd.run(['git', 'push'], check=True)
         else:
             print("스테이징된 파일이 없습니다. .gitignore/경로를 확인하세요.")
+    except cmd.CalledProcessError as e:
+        os.chdir(original_cwd)
+        # e.cmd 전체 출력 금지 (clone URL 등 credential 노출 방지)
+        cmd_summary = e.cmd[0] if isinstance(e.cmd, list) else str(e.cmd).split()[0]
+        return f"git 작업 실패 ({cmd_summary} 종료코드 {e.returncode})"
     finally:
         os.chdir(original_cwd)
 

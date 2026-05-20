@@ -8,7 +8,7 @@ spec:
     This Pipeline for spring build.
   params:
   - name: git-host-url
-    default: {{gitea_domain}}
+    default: "{{gitea_domain}}"
     type: string
   - name: code-repo-org
     default: sample
@@ -73,7 +73,7 @@ spec:
     default: $(params.code-repo-name)
     type: string
   - name: app-image
-    default: {{image_registry}}/$(params.app-namespace)/$(params.code-repo-org)/$(params.app-name)
+    default: "{{image_registry}}/$(params.app-namespace)/$(params.code-repo-org)/$(params.app-name)"
     type: string
   - name: path-to-dockerfile
     default: "Dockerfile"
@@ -110,7 +110,7 @@ spec:
     name: code-fetch
     params:
     - name: gitInitImage
-      value: {{image_registry}}/nnd/tekton-cicd/git-init:v0.40.2-tz
+      value: "{{image_registry}}/nnd/tekton-cicd/git-init:v0.40.2-tz"
     - name: crtFileName
       value: ca-certificates.crt
     - name: sslVerify
@@ -144,9 +144,9 @@ spec:
     name: code-build
     params:
     - name: BASH_IMAGE
-      value: {{image_registry}}/nnd/tekton-cicd/bash:5.2.21
+      value: "{{image_registry}}/nnd/tekton-cicd/bash:5.2.21"
     - name: MAVEN_IMAGE
-      value: {{image_registry}}/nnd/tekton-cicd/maven:3.9.5-eclipse-temurin-$(params.java-version)
+      value: "{{image_registry}}/nnd/tekton-cicd/maven:3.9.5-eclipse-temurin-$(params.java-version)"
     - name: CONTEXT_DIR
       value: $(params.working-pr-dir)/$(params.code-repo-name)
     - name: GOALS
@@ -192,9 +192,9 @@ spec:
       - "false"
     params:
     - name: BASH_IMAGE
-      value: {{image_registry}}/nnd/tekton-cicd/bash:5.2.21
+      value: "{{image_registry}}/nnd/tekton-cicd/bash:5.2.21"
     - name: MAVEN_IMAGE
-      value: {{image_registry}}/nnd/tekton-cicd/maven:3.9.5-eclipse-temurin-$(params.java-version)
+      value: "{{image_registry}}/nnd/tekton-cicd/maven:3.9.5-eclipse-temurin-$(params.java-version)"
     - name: CONTEXT_DIR
       value: $(params.working-pr-dir)/$(params.code-repo-name)
     - name: GOALS
@@ -241,7 +241,7 @@ spec:
     - name: CONTEXT_DIR
       value: $(params.working-pr-dir)/$(params.code-repo-name)
     - name: SONAR_HOST_URL
-      value: {{sonar_host_url_internal}}
+      value: "{{sonar_host_url_internal}}"
     - name: SONAR_PROJECT_KEY
       value: $(params.code-repo-name)
     - name: PROJECT_VERSION
@@ -249,13 +249,13 @@ spec:
     - name: SOURCE_TO_SCAN
       value: .
     - name: SONAR_SCANNER_IMAGE
-      value: {{image_registry}}/nnd/tekton-cicd/sonar-scanner-cli:5.0.1
+      value: "{{image_registry}}/nnd/tekton-cicd/sonar-scanner-cli:5.0.1"
     - name: SONAR_LOGIN_KEY
       value: login
     - name: SONAR_PASSWORD_KEY
       value: password
     - name: SONAR_LINKS_CI
-      value: {{tekton_domain}}/#/namespaces/$(context.pipelineRun.namespace)/pipelineruns/$(context.pipelineRun.name)?pipelineTask=code-analysis&step=sonar-scan
+      value: "{{tekton_domain}}/#/namespaces/$(context.pipelineRun.namespace)/pipelineruns/$(context.pipelineRun.name)?pipelineTask=code-analysis&step=sonar-scan"
     - name: SONAR_LINKS_SCM
       value: $(params.code-repo-url)
     - name: SONAR_LANGUAGE
@@ -271,7 +271,7 @@ spec:
     - name: SONAR_JUNIT_REPORTPATHS
       value: target/surefire-reports
     - name: SONAR_PROP_IMAGE
-      value: {{image_registry}}/nnd/tekton-cicd/bash:5.2.21
+      value: "{{image_registry}}/nnd/tekton-cicd/bash:5.2.21"
     - name: SONAR_BRANCH_NAME
       value: $(params.code-revision)
     runAfter:
@@ -306,9 +306,9 @@ spec:
       - "false"
     params:
     - name: BASH_IMAGE
-      value: {{image_registry}}/nnd/tekton-cicd/bash:5.2.21
+      value: "{{image_registry}}/nnd/tekton-cicd/bash:5.2.21"
     - name: MAVEN_IMAGE
-      value: {{image_registry}}/nnd/tekton-cicd/maven:3.9.5-eclipse-temurin-$(params.java-version)
+      value: "{{image_registry}}/nnd/tekton-cicd/maven:3.9.5-eclipse-temurin-$(params.java-version)"
     - name: CONTEXT_DIR
       value: $(params.working-pr-dir)/$(params.code-repo-name)
     - name: GOALS
@@ -353,7 +353,7 @@ spec:
       - "false"
     params:
     - name: image
-      value: {{image_registry}}/nnd/tekton-cicd/bash:5.2.21
+      value: "{{image_registry}}/nnd/tekton-cicd/bash:5.2.21"
     - name: path
       value: $(params.working-pr-dir)/$(params.code-repo-name)/$(params.path-to-dockerfile)
     - name: contents
@@ -404,9 +404,9 @@ spec:
     - name: CONTEXT
       value: $(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-repo-name)
     - name: BUILDER_IMAGE
-      value: {{image_registry}}/nnd/tekton-cicd/kaniko:v1.23.2
+      value: "{{image_registry}}/nnd/tekton-cicd/kaniko:v1.23.2"
     - name: BASH_IMAGE
-      value: {{image_registry}}/nnd/tekton-cicd/bash:5.2.21
+      value: "{{image_registry}}/nnd/tekton-cicd/bash:5.2.21"
     runAfter:
     - write-dockerfile
     taskRef:
@@ -446,7 +446,7 @@ spec:
       - --ignore-unfixed
       - --input $(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-repo-name)/image.tar
     - name: TRIVY_IMAGE
-      value: {{image_registry}}/nnd/tekton-cicd/trivy:0.54.2
+      value: "{{image_registry}}/nnd/tekton-cicd/trivy:0.54.2"
     # - name: IMAGE
     #   value: $(params.app-image):$(params.cicd-auto-tag)
     - name: AIR_GAPPED_ENABLED
@@ -474,7 +474,7 @@ spec:
     name: gitops-fetch
     params:
     - name: gitInitImage
-      value: {{image_registry}}/nnd/tekton-cicd/git-init:v0.40.2-tz
+      value: "{{image_registry}}/nnd/tekton-cicd/git-init:v0.40.2-tz"
     - name: crtFileName
       value: ca-certificates.crt
     - name: sslVerify
@@ -512,7 +512,7 @@ spec:
     - name: CONTEXT_DIR
       value: $(params.working-pr-dir)/$(params.gitops-repo-name)/overlays/$(params.app-env)
     - name: IMAGE
-      value: {{image_registry}}/nnd/tekton-cicd/kustomize:v5.0.1
+      value: "{{image_registry}}/nnd/tekton-cicd/kustomize:v5.0.1"
     - name: SCRIPT
       value: |
         kustomize edit set image $(params.app-name)=$(params.app-image):$(params.cicd-auto-tag)
@@ -544,7 +544,7 @@ spec:
     - name: CONTEXT_DIR
       value: $(params.working-pr-dir)/$(params.code-repo-name)
     - name: IMAGE
-      value: {{image_registry}}/nnd/tekton-cicd/polaris:9.6
+      value: "{{image_registry}}/nnd/tekton-cicd/polaris:9.6"
     - name: SCRIPT
       value: |
         polaris audit --audit-path ./kubernetes.yaml --quiet $(params.polaris-audit-flags)
@@ -567,7 +567,7 @@ spec:
     name: cicd-fetch
     params:
     - name: gitInitImage
-      value: {{image_registry}}/nnd/tekton-cicd/git-init:v0.40.2-tz
+      value: "{{image_registry}}/nnd/tekton-cicd/git-init:v0.40.2-tz"
     - name: crtFileName
       value: ca-certificates.crt
     - name: sslVerify
@@ -605,7 +605,7 @@ spec:
     - name: CONTEXT_DIR
       value: $(params.working-pr-dir)/$(params.cicd-repo-name)
     - name: BASE_IMAGE
-      value: {{image_registry}}/nnd/tekton-cicd/chainguard-git:2.43.0
+      value: "{{image_registry}}/nnd/tekton-cicd/chainguard-git:2.43.0"
     - name: CRT_FILENAME
       value: ca-certificates.crt
     - name: USER_HOME
@@ -668,7 +668,7 @@ spec:
       - "false"
     params:
     - name: curl-image
-      value: {{image_registry}}/nnd/tekton-cicd/curl:8.5.0
+      value: "{{image_registry}}/nnd/tekton-cicd/curl:8.5.0"
     - name: url
       value: el-$(params.deploy-el-name).$(context.pipelineRun.namespace).svc:8080
     - name: options
@@ -711,7 +711,7 @@ spec:
       - args:
         - $(params.ARGS)
         computeResources: {}
-        image: {{image_registry}}/nnd/tekton-cicd/tkn:v0.12.0
+        image: "{{image_registry}}/nnd/tekton-cicd/tkn:v0.12.0"
         name: tkn
         script: |
           if [ "$(workspaces.kubeconfig.bound)" = "true" ] && [ -e $(workspaces.kubeconfig.path)/kubeconfig ]; then

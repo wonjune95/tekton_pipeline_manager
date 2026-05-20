@@ -8,7 +8,7 @@ spec:
     This Pipeline for building WAS Base Image.
   params:
   - name: git-host-url
-    default: {{gitea_domain}}
+    default: "{{gitea_domain}}"
     type: string
   - name: code-repo-org
     default: sample
@@ -52,7 +52,7 @@ spec:
     default: $(params.code-repo-name)
     type: string
   - name: app-image
-    default: {{image_registry}}/$(params.app-namespace)/$(params.code-repo-org)/$(params.app-name)
+    default: "{{image_registry}}/$(params.app-namespace)/$(params.code-repo-org)/$(params.app-name)"
     type: string
   - name: path-to-dockerfile
     default: "Dockerfile"
@@ -92,7 +92,7 @@ spec:
     name: code-fetch
     params:
     - name: gitInitImage
-      value: {{image_registry}}/nnd/tekton-cicd/git-init:v0.40.2-tz
+      value: "{{image_registry}}/nnd/tekton-cicd/git-init:v0.40.2-tz"
     - name: crtFileName
       value: ca-certificates.crt
     - name: sslVerify
@@ -131,7 +131,7 @@ spec:
       - "false"
     params:
     - name: image
-      value: {{image_registry}}/nnd/tekton-cicd/bash:5.2.21
+      value: "{{image_registry}}/nnd/tekton-cicd/bash:5.2.21"
     - name: path
       value: $(params.working-pr-dir)/$(params.code-repo-name)/$(params.path-to-dockerfile)
     - name: contents
@@ -176,9 +176,9 @@ spec:
     - name: CONTEXT
       value: $(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-repo-name)
     - name: BUILDER_IMAGE
-      value: {{image_registry}}/nnd/tekton-cicd/executor:v1.21.1
+      value: "{{image_registry}}/nnd/tekton-cicd/executor:v1.21.1"
     - name: BASH_IMAGE
-      value: {{image_registry}}nnd/tekton-cicd/bash:5.2.21
+      value: "{{image_registry}}nnd/tekton-cicd/bash:5.2.21"
     runAfter:
     - write-dockerfile
     taskRef:
@@ -218,7 +218,7 @@ spec:
       - --ignore-unfixed
       - --input $(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-repo-name)/image.tar
     - name: TRIVY_IMAGE
-      value: {{image_registry}}/nnd/tekton-cicd/trivy:0.48.0
+      value: "{{image_registry}}/nnd/tekton-cicd/trivy:0.48.0"
     # - name: IMAGE
     #   value: $(params.app-image):$(params.cicd-auto-tag)
     - name: AIR_GAPPED_ENABLED
@@ -246,7 +246,7 @@ spec:
     name: gitops-fetch
     params:
     - name: gitInitImage
-      value: {{image_registry}}/nnd/tekton-cicd/git-init:v0.40.2-tz
+      value: "{{image_registry}}/nnd/tekton-cicd/git-init:v0.40.2-tz"
     - name: crtFileName
       value: ca-certificates.crt
     - name: sslVerify
@@ -284,7 +284,7 @@ spec:
     - name: CONTEXT_DIR
       value: $(params.working-pr-dir)/$(params.gitops-repo-name)/overlays/$(params.app-env)
     - name: IMAGE
-      value: {{image_registry}}/nnd/tekton-cicd/kustomize:v5.0.1
+      value: "{{image_registry}}/nnd/tekton-cicd/kustomize:v5.0.1"
     - name: SCRIPT
       value: |
         kustomize edit set image $(params.app-name)=$(params.app-image):$(params.cicd-auto-tag)
@@ -309,7 +309,7 @@ spec:
     name: cicd-fetch
     params:
     - name: gitInitImage
-      value: {{image_registry}}/nnd/tekton-cicd/git-init:v0.40.2-tz
+      value: "{{image_registry}}/nnd/tekton-cicd/git-init:v0.40.2-tz"
     - name: crtFileName
       value: ca-certificates.crt
     - name: sslVerify
@@ -347,7 +347,7 @@ spec:
     - name: CONTEXT_DIR
       value: $(params.working-pr-dir)/$(params.cicd-repo-name)
     - name: BASE_IMAGE
-      value: {{image_registry}}/nnd/tekton-cicd/chainguard-git:2.43.0
+      value: "{{image_registry}}/nnd/tekton-cicd/chainguard-git:2.43.0"
     - name: CRT_FILENAME
       value: ca-certificates.crt
     - name: USER_HOME
@@ -411,7 +411,7 @@ spec:
       - "false"
     params:
     - name: curl-image
-      value: {{image_registry}}/nnd/tekton-cicd/curl:8.5.0
+      value: "{{image_registry}}/nnd/tekton-cicd/curl:8.5.0"
     - name: url
       value: el-$(params.deploy-el-name).$(context.pipelineRun.namespace).svc:8080
     - name: options
@@ -456,7 +456,7 @@ spec:
       - args:
         - $(params.ARGS)
         computeResources: {}
-        image: {{image_registry}}/nnd/tekton-cicd/curl:8.5.0
+        image: "{{image_registry}}/nnd/tekton-cicd/curl:8.5.0"
         name: curl
         script: |
           for arg in "$@"
@@ -487,7 +487,7 @@ spec:
       - args:
         - $(params.ARGS)
         computeResources: {}
-        image: {{image_registry}}/nnd/tekton-cicd/tkn:latest
+        image: "{{image_registry}}/nnd/tekton-cicd/tkn:latest"
         name: tkn
         script: |
           if [ "$(workspaces.kubeconfig.bound)" = "true" ] && [ -e $(workspaces.kubeconfig.path)/kubeconfig ]; then

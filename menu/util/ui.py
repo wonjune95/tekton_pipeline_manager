@@ -1,4 +1,27 @@
 import os
+import re
+import subprocess as _sp
+import inquirer as _inquirer
+
+# RFC 1123 DNS label: 소문자/숫자로 시작·끝, 가운데에만 하이픈 허용
+_K8S_NAME_RE = re.compile(r'^[a-z0-9]([a-z0-9-]*[a-z0-9])?$')
+
+def validate_k8s_name(name: str, label: str) -> str:
+    """
+    Kubernetes 리소스명 검증 (RFC 1123 DNS label). 문제가 있으면 에러 메시지 반환, 정상이면 ''.
+    - 소문자·숫자·하이픈만 허용
+    - 소문자/숫자로 시작 및 종료 (하이픈 시작/종료 금지)
+    - 최대 53자 (namespace에 '-cicd' suffix 가 붙는 여유분)
+    """
+    if not name:
+        return f'{label}을(를) 입력해주세요.'
+    if re.search('[가-힣]', name):
+        return f'{label}에 한글은 사용할 수 없습니다.'
+    if not _K8S_NAME_RE.match(name):
+        return f'{label}는 소문자·숫자·하이픈(-)만 허용되며, 소문자 또는 숫자로 시작·종료해야 합니다.'
+    if len(name) > 53:
+        return f'{label}는 53자 이하여야 합니다(-cicd suffix 여유분).'
+    return ''
 
 # ── 색상 ────────────────────────────────────────────────
 C = '\033[96m'    # cyan      — 박스 테두리
@@ -9,6 +32,34 @@ T = '\033[1;96m'  # bold cyan — 타이틀
 R = '\033[0m'     # reset
 
 _N = 64           # 박스 내부 너비 (visual columns)
+
+
+def _visual_len(s: str) -> int:
+    """한글/CJK 2cols, ASCII 1col 기준 시각적 너비."""
+    n = 0
+    for ch in s:
+        n += 2 if '가' <= ch <= '힣' or '一' <= ch <= '鿿' else 1
+    return n
+
+
+def _wrap_text(text: str, max_v: int) -> list:
+    """단어 단위 줄바꿈. 한글 2cols 기준으로 max_v 이내로 분할."""
+    words = text.split(' ')
+    lines, current, current_v = [], '', 0
+    for word in words:
+        wv = _visual_len(word)
+        if current and current_v + 1 + wv > max_v:
+            lines.append(current)
+            current, current_v = word, wv
+        else:
+            if current:
+                current += ' '
+                current_v += 1
+            current += word
+            current_v += wv
+    if current:
+        lines.append(current)
+    return lines or ['']
 
 
 def _hline(content: str, content_v: int) -> str:
@@ -43,8 +94,11 @@ def draw_menu(title: str, title_v: int, items: list, notes: list = None):
 
     if notes:
         print()
+        _max_note = _N - 4  # 60 visual cols (2좌측 여백 + 2우측 여백)
         for note in notes:
-            print(f'  {C}║  {G}{note}{R}')
+            for line in _wrap_text(note, _max_note):
+                vlen = _visual_len(line)
+                print(f'  {C}║  {G}{line}{R}{" " * (_max_note - vlen)}{C}║{R}')
         print()
         print(f'  {C}╠{SEP}╣{R}')
 
@@ -72,3 +126,13 @@ def draw_menu(title: str, title_v: int, items: list, notes: list = None):
     print(f'  {C}║{" " * _N}║{R}')
     print(f'  {C}╚{SEP}╝{R}')
     print()
+
+
+def safe_prompt(questions):
+    """inquirer.prompt 래퍼: 선택 후 터미널 상태(echo 등) 복원."""
+    result = _inquirer.prompt(questions)
+    try:
+        _sp.run(['stty', 'sane'], capture_output=True, timeout=1)
+    except Exception:
+        pass
+    return result

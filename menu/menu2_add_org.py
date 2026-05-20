@@ -6,7 +6,7 @@ import subprocess
 import inquirer
 import paramiko
 from jinja2 import Environment, FileSystemLoader
-from menu.util.ui import draw_menu
+from menu.util.ui import draw_menu, safe_prompt, validate_k8s_name
 
 def _load_private_key(pem_path):
     for key_cls in (paramiko.RSAKey, paramiko.ECDSAKey, paramiko.Ed25519Key, paramiko.DSSKey):
@@ -54,9 +54,17 @@ def menu2():
 # 프로젝트 선택(폴더 리스트 기반)
 # =========================
 def choice_project():
-    project_list = os.listdir('result')
+    if not os.path.isdir('result'):
+        print('\033[91m초기화된 프로젝트가 없습니다. 메뉴 1에서 초기화를 먼저 실행하세요.\033[0m')
+        input('\033[0m계속하려면 엔터를 눌러주세요. ')
+        return None
+    project_list = [d for d in os.listdir('result') if os.path.isdir(os.path.join('result', d))]
+    if not project_list:
+        print('\033[91m초기화된 프로젝트가 없습니다. 메뉴 1에서 초기화를 먼저 실행하세요.\033[0m')
+        input('\033[0m계속하려면 엔터를 눌러주세요. ')
+        return None
     options = [inquirer.List("option", message="조직을 추가할 프로젝트를 선택해주세요", choices=project_list)]
-    select = inquirer.prompt(options)
+    select = safe_prompt(options)
     if not select:
         return None
     return select['option']
@@ -114,9 +122,10 @@ def add_org_execute():
         data = json.load(f_in)
 
     # 조직명 입력 및 경로 준비
-    organization_name = input('\033[96m추가할 조직명을 입력해주세요: \033[0m').strip()
-    if not organization_name:
-        print('\033[91m조직명을 입력해주세요\033[0m')
+    organization_name = input('\033[96m추가할 조직명을 입력해주세요(소문자·숫자·하이픈, 예: my-org): \033[0m').strip()
+    err = validate_k8s_name(organization_name, '조직명')
+    if err:
+        print(f'\033[91m{err}\033[0m')
         return
     data['organization_name'] = organization_name
     org_result_path = os.path.join(result_path, f'{organization_name}-cicd')
@@ -197,24 +206,29 @@ def add_org_execute():
 
     # 자동 적용 여부 선택 및 명령어 안내
     options = [inquirer.List("option", message="파일을 자동적용 하시겠습니까?", choices=['Yes', 'No'])]
-    select = inquirer.prompt(options)
+    select = safe_prompt(options)
 
     if select and select['option'] == 'Yes':
-        dev_cluster = [k for k in file_apply_list if '02-1.dev' in k]
-        for item in dev_cluster:
-            context = item.split(".")[-2]
-            subprocess.run(['kubectl', 'config', 'use-context', context], check=True)
-            subprocess.run(['kubectl', 'apply', '-f', item], check=True)
+        try:
+            dev_cluster = [k for k in file_apply_list if '02-1.dev' in k]
+            for item in dev_cluster:
+                context = item.split(".")[-2]
+                subprocess.run(['kubectl', 'config', 'use-context', context], check=True)
+                subprocess.run(['kubectl', 'apply', '-f', item], check=True)
 
-        # stg/prod 는 각 클러스터에서 직접 실행 필요
-        # for item in [k for k in file_apply_list if '02-1.stg' in k]:
-        #     subprocess.run(['kubectl', 'config', 'use-context', item.split(".")[-2]], check=True)
-        #     subprocess.run(['kubectl', 'apply', '-f', item], check=True)
+            # stg/prod 는 각 클러스터에서 직접 실행 필요
+            # for item in [k for k in file_apply_list if '02-1.stg' in k]:
+            #     subprocess.run(['kubectl', 'config', 'use-context', item.split(".")[-2]], check=True)
+            #     subprocess.run(['kubectl', 'apply', '-f', item], check=True)
 
-        nnd_cluster = [k for k in file_apply_list if '02-2.add-organization.yaml' in k]
-        for item in nnd_cluster:
-            subprocess.run(['kubectl', 'config', 'use-context', data['nnd_cluster_name']], check=True)
-            subprocess.run(['kubectl', 'apply', '-f', item], check=True)
+            nnd_cluster = [k for k in file_apply_list if '02-2.add-organization.yaml' in k]
+            for item in nnd_cluster:
+                subprocess.run(['kubectl', 'config', 'use-context', data['nnd_cluster_name']], check=True)
+                subprocess.run(['kubectl', 'apply', '-f', item], check=True)
+        except subprocess.CalledProcessError as e:
+            print(f'\033[91mkubectl 실행 실패 (종료코드 {e.returncode}): {e.cmd}\033[0m')
+            print('\033[91m위 파일을 직접 확인 후 수동으로 적용하세요.\033[0m')
+            input('\033[0m계속하려면 엔터를 눌러주세요. ')
 
 # =========================
 # 캐시 폴더 초기화 (삭제 후 재생성)

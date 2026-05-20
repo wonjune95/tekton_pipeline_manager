@@ -101,8 +101,17 @@ spec:
         volumeMounts:
         - name: config
           mountPath: /etc/oauth2_proxy
-      nodeSelector:
-        kubernetes.io/hostname: {{node_selector}}
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+{%- for node in node_selector_list %}
+                - {{node}}
+{%- endfor %}
       volumes:
       - name: config
         configMap:

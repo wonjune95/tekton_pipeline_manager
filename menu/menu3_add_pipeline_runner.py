@@ -2,12 +2,13 @@ import os
 import json
 import base64
 import subprocess
+import requests
 import inquirer
 import re
 from jinja2 import Environment, FileSystemLoader
 from menu.util.component_api import *
 from menu.util import component_api as _cap
-from menu.util.ui import draw_menu
+from menu.util.ui import draw_menu, safe_prompt, validate_k8s_name
 
 def _pick(*names):
     for n in names:
@@ -57,10 +58,18 @@ def menu3():
 # 프로젝트 선택(폴더 리스트)
 # =========================
 def choice_project():
-    project_list = os.listdir('result')
+    if not os.path.isdir('result'):
+        print('\033[91m초기화된 프로젝트가 없습니다. 메뉴 1에서 초기화를 먼저 실행하세요.\033[0m')
+        input('\033[0m계속하려면 엔터를 눌러주세요. ')
+        return None
+    project_list = [d for d in os.listdir('result') if os.path.isdir(os.path.join('result', d))]
+    if not project_list:
+        print('\033[91m초기화된 프로젝트가 없습니다. 메뉴 1에서 초기화를 먼저 실행하세요.\033[0m')
+        input('\033[0m계속하려면 엔터를 눌러주세요. ')
+        return None
     if len(project_list) > 1:
         options = [inquirer.List("option", message="프로젝트를 선택해주세요", choices=project_list)]
-        select = inquirer.prompt(options)
+        select = safe_prompt(options)
         if not select:
             return None
         return select['option']
@@ -71,6 +80,8 @@ def choice_project():
 # =========================
 def screen_init_value():
     project_name = choice_project()
+    if project_name is None:
+        return
     result_path = f'./result/{project_name}'
     result_file = f'{result_path}/{project_name}-init_result.json'
     if not os.path.exists(result_file):
@@ -87,6 +98,8 @@ def screen_init_value():
 def add_pipeline_runner_execute():
     env_dict = {}
     project_name = choice_project()
+    if project_name is None:
+        return ''
     env_dict['project_name'] = project_name
     result_path = f'./result/{project_name}'
     init_file = f'{result_path}/{project_name}-init_result.json'
@@ -96,21 +109,27 @@ def add_pipeline_runner_execute():
         data = json.load(f_in)
     env_dict['gitea_domain'] = data['gitea_domain']
     env_dict['git_cicd_auth'] = data['git_cicd_auth']
-    org_res = json.loads(get_organization(env_dict))
+    try:
+        org_res = json.loads(get_organization(env_dict))
+    except (requests.HTTPError, requests.ConnectionError, ValueError) as e:
+        return f"Gitea API 오류 (조직 조회 실패): {e}"
     organization_name_list = [item['name'] for item in org_res if 'cicd' not in item['name']]
     if not organization_name_list:
         return "조직이 존재하지 않습니다. 조직생성후 재실행하시길 바랍니다."
     options = [inquirer.List("option", message="조직명을 선택해주세요", choices=organization_name_list)]
-    select = inquirer.prompt(options)
+    select = safe_prompt(options)
     if not select:
         return ''
     env_dict['organization_name'] = select['option']
-    app_res = json.loads(get_repos_in_orgs(env_dict))
+    try:
+        app_res = json.loads(get_repos_in_orgs(env_dict))
+    except (requests.HTTPError, requests.ConnectionError, ValueError) as e:
+        return f"Gitea API 오류 (레포 조회 실패): {e}"
     application_name_list = [item['name'] for item in app_res]
     if not application_name_list:
         return "어플리케이션이 존재하지 않습니다. 어플리케이션생성후 재실행하시길 바랍니다."
     options = [inquirer.List("option", message="어플리케이션을 선택해주세요", choices=application_name_list)]
-    select = inquirer.prompt(options)
+    select = safe_prompt(options)
     if not select:
         return ''
     env_dict['application_name'] = select['option']
@@ -122,18 +141,18 @@ def add_pipeline_runner_execute():
 def manual_mode():
     env_dict = {}
     project_name = choice_project()
+    if project_name is None:
+        return ''
     env_dict['project_name'] = project_name
-    org_name = input('\033[96m조직명을 입력해주세요(예시: sample): \033[0m').strip()
-    if not org_name:
-        return "조직명을 입력해주세요."
-    if re.search('[ㄱ-힣]', org_name):
-        return "한글처리는 불가능합니다."
+    org_name = input('\033[96m조직명을 입력해주세요(소문자·숫자·하이픈, 예시: sample): \033[0m').strip()
+    err = validate_k8s_name(org_name, '조직명')
+    if err:
+        return err
     env_dict['organization_name'] = org_name
-    app_name = input('\033[96m어플리케이션명을 입력해주세요(예시: product-frontend): \033[0m').strip()
-    if not app_name:
-        return "어플리케이션명을 입력해주세요."
-    if re.search('[ㄱ-힣]', app_name):
-        return "한글처리는 불가능합니다."
+    app_name = input('\033[96m어플리케이션명을 입력해주세요(소문자·숫자·하이픈, 예시: product-frontend): \033[0m').strip()
+    err = validate_k8s_name(app_name, '어플리케이션명')
+    if err:
+        return err
     env_dict['application_name'] = app_name
     return choice_pipeline(env_dict)
 
@@ -167,14 +186,19 @@ def choice_pipeline(env_dict):
             return ''
         if int(choice) < 1 or int(choice) >= len(selection_list):
             continue
-        envVal = input('\033[96m생성할 환경명을 입력해주세요(예시:dev or prod): \033[0m').strip()
+        envVal = input('\033[96m생성할 환경명을 입력해주세요(소문자·숫자·하이픈, 예시: dev, stg, prod): \033[0m').strip()
+        err = validate_k8s_name(envVal, '환경명')
+        if err:
+            return err
         env_dict['env_menu'] = envVal
-        envVal = input('\033[96m생성된 브랜치명 입력해주세요(예시:dev or main): \033[0m').strip()
-        env_dict['branch_menu'] = envVal
+        branchVal = input('\033[96m생성된 브랜치명을 입력해주세요(예시: dev, main): \033[0m').strip()
+        if not branchVal:
+            return '브랜치명을 입력해주세요.'
+        env_dict['branch_menu'] = branchVal
         if selection_list[int(choice)] not in ('maven-spring-vm', 'spring-library'):
             deploy_cluster = [k for k in data if k.endswith('deploy_cluster')]
             options = [inquirer.List("option", message="배포될 클러스터를 선택해 주세요", choices=deploy_cluster)]
-            select = inquirer.prompt(options)
+            select = safe_prompt(options)
             if not select:
                 return ''
             env_dict['deploy_cluster'] = data[select['option']]
@@ -218,11 +242,16 @@ def generate_pipeline_run_yaml(pipeline_param, env_param_dict, init_data):
             output = template.render(temp_data)
             project_file.write(output)
     options = [inquirer.List("option", message="파일을 자동적용 하시겠습니까?", choices=['Yes', 'No'])]
-    select = inquirer.prompt(options)
+    select = safe_prompt(options)
     if select and select['option'] == 'Yes':
-        subprocess.run(['kubectl', 'config', 'use-context', temp_data['nnd_cluster_name']], check=True)
-        result = subprocess.run(['kubectl', 'apply', '-f', menu3_file], capture_output=True, text=True)
-        print(result.stdout)
-        if result.returncode != 0:
-            print('\033[91m' + result.stderr + '\033[0m')
+        try:
+            subprocess.run(['kubectl', 'config', 'use-context', temp_data['nnd_cluster_name']], check=True)
+            result = subprocess.run(['kubectl', 'apply', '-f', menu3_file], capture_output=True, text=True)
+            print(result.stdout)
+            if result.returncode != 0:
+                print('\033[91m' + result.stderr + '\033[0m')
+                return f"kubectl apply 실패 — 생성된 파일을 직접 확인하세요: {menu3_file}"
+        except subprocess.CalledProcessError as e:
+            print(f'\033[91mkubectl 실행 실패 (종료코드 {e.returncode}): {e.cmd}\033[0m')
+            return f"kubectl 실패 — 생성된 파일을 직접 확인하세요: {menu3_file}"
     return "정상처리"

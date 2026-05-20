@@ -273,12 +273,16 @@ def create_sonar_token(data):
 def get_oragnizaion(data):
     url = data["gitea_domain"]+'/api/v1/orgs'
     headers = {'Content-Type':'application/json', 'Authorization':'Basic '+data['git_cicd_auth'], 'Accept':'application/json'}
-    return requests.get(url, headers=headers, verify=False).text
+    r = requests.get(url, headers=headers, verify=False)
+    r.raise_for_status()
+    return r.text
 
 def get_repos_in_orgs(data):
     url = data["gitea_domain"]+'/api/v1/orgs/'+ data['organization_name']+'/repos'
     headers = {'Content-Type':'application/json', 'Authorization':'Basic '+data['git_cicd_auth'], 'Accept':'application/json'}
-    return requests.get(url, headers=headers, verify=False).text
+    r = requests.get(url, headers=headers, verify=False)
+    r.raise_for_status()
+    return r.text
 
 def create_oragnizaion(data):
     url = data["gitea_domain"]+'/api/v1/orgs'

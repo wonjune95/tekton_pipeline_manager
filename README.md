@@ -39,7 +39,7 @@ chmod +x install.sh && sudo ./install.sh
 ## 폴더 구조
 
 ```
-gitops/
+tekton_pipeline_manager/
 ├── yaml_maker.py                       ← 실행 진입점
 │
 ├── 00.reset/
@@ -51,7 +51,7 @@ gitops/
 │   ├── tekton-with-role/
 │   ├── argocd/
 │   ├── oauth/
-│   └── {env}-{tier}-cluster.yaml       ← 클러스터별 스토리지 초기화 템플릿
+│   └── {env}-{tier}-cluster.yaml       ← 앱 클러스터 초기 namespace/secret/SC 템플릿
 │
 ├── 02-1.add-storage-in-organization/   ← 조직별 스토리지 YAML 템플릿
 ├── 02-2.add-organization/              ← 조직 네임스페이스·RBAC 템플릿
@@ -79,7 +79,6 @@ gitops/
 │       ├── gitea_api.py                ← Gitea API
 │       └── ui.py
 │
-├── tekton-rbac/                        ← Tekton 직접 적용용 YAML
 ├── python-package/                     ← 오프라인 설치 패키지 모음
 │   ├── ubuntu/  (debs/ + packages/)
 │   └── rocky/   (rpms/rocky8|9/ + packages/)
@@ -137,8 +136,8 @@ gitops/
 ## 2단계: 프로그램 실행
 
 ```bash
-cd gitops/
-python yaml_maker.py
+cd tekton_pipeline_manager/
+python3 yaml_maker.py
 ```
 
 ```
@@ -177,6 +176,7 @@ Tekton, ArgoCD, Harbor, Nexus, Gitea, SonarQube의 계정·저장소를 자동 �
    - `01-3.init-oauth.yaml` — OAuth 설정
    - `01-4.init-argo.yaml` — ArgoCD 설정
    - `01-5.init-tekton-group-role.yaml` — Tekton 그룹 롤
+   - `01-6.init-cluster.yaml` — 앱 클러스터(dev/stg/prod be·fe) 초기 namespace·SC·secret
 2. Harbor robot 계정 자동 생성
 3. Gitea CI/CD 서비스 계정 자동 생성
 4. Nexus 계정 및 저장소(maven, npm, raw) 자동 생성
@@ -202,6 +202,11 @@ kubectl apply -f result/{project_name}/01-2.init-pipeline.yaml
 kubectl apply -f result/{project_name}/01-3.init-oauth.yaml
 kubectl apply -f result/{project_name}/01-4.init-argo.yaml
 kubectl apply -f result/{project_name}/01-5.init-tekton-group-role.yaml
+
+# 4. 앱 클러스터(dev/stg/prod be·fe)에는 01-6.init-cluster.yaml 을 컨텍스트 전환 후 적용
+kubectl config use-context dev-be-cluster
+kubectl apply -f result/{project_name}/01-6.init-cluster.yaml
+# ... stg, prod, frontend 클러스터도 동일
 ```
 
 > **참고**: Tekton에 RBAC가 적용된 경우 CoreDNS hosts에 Gitea 도메인을 등록해야 합니다.
@@ -214,7 +219,10 @@ kubectl apply -f result/{project_name}/01-5.init-tekton-group-role.yaml
 
 ### 네임스페이스 명명 규칙
 
-Gitea의 조직명을 기준으로, 각 클러스터에 생성되는 네임스페이스가 결정됩니다.  
+Gitea의 조직명을 기준으로, 각 클러스터에 생성되는 네임스페이스가 결정됩니다.
+
+> **입력 제약 (조직명·앱명·환경명 공통)**: 소문자·숫자·하이픈(`-`)만 허용. 시작과 끝은 영문 소문자나 숫자여야 합니다. 최대 53자. 한글·공백·언더스코어·대문자는 거부됩니다 (RFC 1123 DNS label).
+
 예를 들어 Gitea 조직명이 `sample`이면:
 
 | 클러스터 | 네임스페이스 |
@@ -388,6 +396,7 @@ result/
     ├── 01-3.init-oauth.yaml
     ├── 01-4.init-argo.yaml
     ├── 01-5.init-tekton-group-role.yaml
+    ├── 01-6.init-cluster.yaml
     └── sample-cicd/                              ← 조직명
         ├── 02-1.dev-be-cluster.yaml
         ├── 02-1.dev-fe-cluster.yaml

@@ -8,7 +8,7 @@ spec:
     This Pipeline for maven library build.
   params:
   - name: git-host-url
-    default: {{gitea_domain}}
+    default: "{{gitea_domain}}"
     type: string
   - name: code-repo-org
     default: sample
@@ -62,7 +62,7 @@ spec:
     name: code-fetch
     params:
     - name: gitInitImage
-      value: {{image_registry}}/nnd/tekton-cicd/git-init:v0.40.2-tz
+      value: "{{image_registry}}/nnd/tekton-cicd/git-init:v0.40.2-tz"
     - name: crtFileName
       value: ca-certificates.crt
     - name: sslVerify
@@ -96,9 +96,9 @@ spec:
     name: code-build
     params:
     - name: BASH_IMAGE
-      value: {{image_registry}}/nnd/tekton-cicd/bash:5.2.21
+      value: "{{image_registry}}/nnd/tekton-cicd/bash:5.2.21"
     - name: MAVEN_IMAGE
-      value: {{image_registry}}/nnd/tekton-cicd/maven:3.9.5-eclipse-temurin-$(params.java-version)
+      value: "{{image_registry}}/nnd/tekton-cicd/maven:3.9.5-eclipse-temurin-$(params.java-version)"
     - name: CONTEXT_DIR
       value: $(params.working-pr-dir)/$(params.code-repo-name)
     - name: GOALS
@@ -148,9 +148,9 @@ spec:
       - "false"
     params:
     - name: BASH_IMAGE
-      value: {{image_registry}}/nnd/tekton-cicd/bash:5.2.21
+      value: "{{image_registry}}/nnd/tekton-cicd/bash:5.2.21"
     - name: MAVEN_IMAGE
-      value: {{image_registry}}/nnd/tekton-cicd/maven:3.9.5-eclipse-temurin-$(params.java-version)
+      value: "{{image_registry}}/nnd/tekton-cicd/maven:3.9.5-eclipse-temurin-$(params.java-version)"
     - name: CONTEXT_DIR
       value: $(params.working-pr-dir)/$(params.code-repo-name)
     - name: GOALS
@@ -201,7 +201,7 @@ spec:
     - name: CONTEXT_DIR
       value: $(params.working-pr-dir)/$(params.code-repo-name)
     - name: SONAR_HOST_URL
-      value: {{sonar_host_url_internal}}
+      value: "{{sonar_host_url_internal}}"
     - name: SONAR_PROJECT_KEY
       value: $(params.code-repo-name)
     - name: PROJECT_VERSION
@@ -209,7 +209,7 @@ spec:
     - name: SOURCE_TO_SCAN
       value: .
     - name: SONAR_SCANNER_IMAGE
-      value: {{image_registry}}/nnd/tekton-cicd/sonar-scanner-cli:5.0.1
+      value: "{{image_registry}}/nnd/tekton-cicd/sonar-scanner-cli:5.0.1"
     - name: SONAR_LOGIN_KEY
       value: login
     - name: SONAR_PASSWORD_KEY
@@ -231,7 +231,7 @@ spec:
     - name: SONAR_JUNIT_REPORTPATHS
       value: target/surefire-reports
     - name: SONAR_PROP_IMAGE
-      value: {{image_registry}}/nnd/tekton-cicd/bash:5.2.21
+      value: "{{image_registry}}/nnd/tekton-cicd/bash:5.2.21"
     - name: SONAR_BRANCH_NAME
       value: $(params.code-revision)
     runAfter:
@@ -268,9 +268,9 @@ spec:
       - "false"
     params:
     - name: BASH_IMAGE
-      value: {{image_registry}}/nnd/tekton-cicd/bash:5.2.21
+      value: "{{image_registry}}/nnd/tekton-cicd/bash:5.2.21"
     - name: MAVEN_IMAGE
-      value: {{image_registry}}/nnd/tekton-cicd/maven:3.9.5-eclipse-temurin-$(params.java-version)
+      value: "{{image_registry}}/nnd/tekton-cicd/maven:3.9.5-eclipse-temurin-$(params.java-version)"
     - name: CONTEXT_DIR
       value: $(params.working-pr-dir)/$(params.code-repo-name)
     - name: GOALS
@@ -333,7 +333,7 @@ spec:
       - args:
         - $(params.ARGS)
         computeResources: {}
-        image: {{image_registry}}/nnd/tekton-cicd/curl:8.5.0
+        image: "{{image_registry}}/nnd/tekton-cicd/curl:8.5.0"
         name: curl
         script: |
           for arg in "$@"
@@ -364,7 +364,7 @@ spec:
       - args:
         - $(params.ARGS)
         computeResources: {}
-        image: {{image_registry}}/nnd/tekton-cicd/tkn:v0.12.0
+        image: "{{image_registry}}/nnd/tekton-cicd/tkn:v0.12.0"
         name: tkn
         script: |
           if [ "$(workspaces.kubeconfig.bound)" = "true" ] && [ -e $(workspaces.kubeconfig.path)/kubeconfig ]; then

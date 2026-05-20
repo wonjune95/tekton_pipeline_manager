@@ -9,7 +9,7 @@ project_name = "MY_PROJECT_NAME"
 #
 #   nks_cert_auth_data : kubectl config view --raw 에서 certificate-authority-data 값
 #   nks_master_server  : kubectl config view --raw 에서 server 값
-#   node_selector      : CICD 파이프라인이 실행될 워커 노드명
+#   node_selector      : CICD 파이프라인이 실행될 워커 노드명 (여러 개는 쉼표 구분, ex: worker-0,worker-1)
 #   nnd_cluster_name   : kubectl config get-contexts 에서 CURRENT 컨텍스트명
 #   nnd_domain_name    : ND 클러스터 도메인 (nip.io 형식 가능)
 #   cicdbot_token      : 01.init 적용 후 아래 명령어로 취득 후 입력
@@ -17,7 +17,7 @@ project_name = "MY_PROJECT_NAME"
 # ════════════════════════════════════════════════════════
 nks_cert_auth_data = ""
 nks_master_server  = "https://YOUR_MASTER_SERVER_IP:6443"
-node_selector      = "YOUR_WORKER_NODE_NAME"
+node_selector      = "YOUR_WORKER_NODE_NAME"          # 복수: "worker-0,worker-1"
 nnd_cluster_name   = "YOUR_KUBECTL_CONTEXT_NAME"
 nnd_domain_name    = "YOUR_CLUSTER_IP.nip.io"
 cicdbot_token      = ""
@@ -93,6 +93,7 @@ sonar_token = ""
 #   *_domain  : http(s) 포함 전체 URL  (예: http://1.2.3.4/gitea)
 #   *_host_url: 스킴 없이 host/path 만  (예: 1.2.3.4/gitea)
 # ════════════════════════════════════════════════════════
+argocd_domain    = "http://YOUR_CLUSTER_IP.nip.io/argocd"
 argocd_host_url  = "YOUR_CLUSTER_IP.nip.io/argocd"
 tekton_domain    = "http://YOUR_CLUSTER_IP.nip.io/tekton"
 tekton_host_url  = "YOUR_CLUSTER_IP.nip.io/tekton"
@@ -173,7 +174,7 @@ prod_lb_name = ""
 #
 #   vm_host : YAML 들여쓰기 형식 문자열 (예: "    - 10.0.0.1\n    - 10.0.0.2")
 # ════════════════════════════════════════════════════════
-vm_host            = "    - YOUR_VM_IP_1\n    - YOUR_VM_IP_2"
+vm_host            = ["YOUR_VM_IP_1", "YOUR_VM_IP_2"]   # 여러 IP: ["1.1.1.1", "2.2.2.2"]
 vm_ssh_private_key = "-----BEGIN OPENSSH PRIVATE KEY-----\n-----END OPENSSH PRIVATE KEY-----"
 vm_ssh_public_key  = ""
 
@@ -183,7 +184,7 @@ vm_ssh_public_key  = ""
 #
 #   pem 파일을 result/{project_name}/ 폴더에 복사 후 파일명 입력
 # ════════════════════════════════════════════════════════
-cicd_cache_node_ip       = "YOUR_CACHE_NODE_IP"
+cicd_cache_node_ip       = "YOUR_CACHE_NODE_IP"       # 복수: "1.1.1.1,2.2.2.2"
 cicd_cache_node_id       = "YOUR_CACHE_NODE_USERNAME"
 cicd_cache_node_pem_file = "YOUR_PEM_FILENAME.pem"
 cicd_cache_node_port     = 22

@@ -24,12 +24,23 @@ def load_env():
     인증에 필요한 base64 auth 키 추가
     """
     env = {}
-    if os.path.exists('./00.reset/tekton_init.toml'):
-        with open('./00.reset/tekton_init.toml', 'rb') as f:
-            env.update(tomllib.load(f))
-    if os.path.exists('./tekton.env'):
-        with open('./tekton.env', 'r') as f:
-            env.update(json.load(f))
+    toml_path = './00.reset/tekton_init.toml'
+    if os.path.exists(toml_path):
+        try:
+            with open(toml_path, 'rb') as f:
+                env.update(tomllib.load(f))
+        except tomllib.TOMLDecodeError as e:
+            print(f'\033[91m[CONFIG ERROR] {toml_path} TOML 문법 오류: {e}\033[0m')
+            print('\033[91m  → 따옴표/대괄호/줄바꿈을 확인하세요.\033[0m')
+            sys.exit(1)
+    env_path = './tekton.env'
+    if os.path.exists(env_path):
+        try:
+            with open(env_path, 'r') as f:
+                env.update(json.load(f))
+        except json.JSONDecodeError as e:
+            print(f'\033[91m[CONFIG ERROR] {env_path} JSON 문법 오류: {e}\033[0m')
+            sys.exit(1)
     # 각종 인증정보 base64 자동 추가
     keypairs = [
         ('harbor_id', 'harbor_pw', 'harbor_auth'),
@@ -41,6 +52,7 @@ def load_env():
         if id_key in env and pw_key in env:
             s = f"{env[id_key]}:{env[pw_key]}"
             env[result_key] = base64.b64encode(s.encode("utf-8")).decode("utf-8")
+    env['node_selector_list'] = [n.strip() for n in str(env.get('node_selector', '')).split(',') if n.strip()]
     return env
 
 data = load_env()
@@ -101,9 +113,6 @@ def main():
     """
     메인 CLI 메뉴 및 분기
     """
-    if not validate_config(data):
-        sys.exit(1)
-
     parser = argparse.ArgumentParser(
         prog='python yaml_maker.py',
         description='Tekton Pipeline Manager'
@@ -114,6 +123,9 @@ def main():
         help='메뉴 번호 직접 실행  1:초기화  2:조직추가  3:파이프라인  4:GitOps'
     )
     args = parser.parse_args()
+
+    if not validate_config(data):
+        sys.exit(1)
 
     menu_actions = {
         1: menu1,

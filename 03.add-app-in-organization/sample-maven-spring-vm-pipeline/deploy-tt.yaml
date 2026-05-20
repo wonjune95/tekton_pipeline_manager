@@ -35,7 +35,9 @@ spec:
         value: $(params.git-host-url)/$(params.code-repo-org)/$(params.code-repo-name).git
       - name: server_hosts
         value:
-{{vm_host}}
+{% for ip in vm_host %}
+          - "{{ip}}"
+{% endfor %}
       - name: server_port
         value: "22"
       - name: server_user

@@ -25,7 +25,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PY_PKG_DIR="$SCRIPT_DIR/packages"
-RPM_DIR="$SCRIPT_DIR/rpms"
 REQ_FILE="$SCRIPT_DIR/../requirements.txt"
 
 echo "════════════════════════════════════════════════"
@@ -41,6 +40,9 @@ if [ -f /etc/rocky-release ]; then
     ROCKY_VER=$(grep -oP '(?<=release )\d' /etc/rocky-release 2>/dev/null || echo 9)
 fi
 echo "[INFO] Rocky 버전: $ROCKY_VER"
+
+# install.sh 가 rpms/rocky${VER}/ 경로를 찾으므로 동일 위치에 저장
+RPM_DIR="$SCRIPT_DIR/rpms/rocky${ROCKY_VER}"
 
 # ── Python 선택 (3.9 이상 우선) ──────────────────────
 PYTHON=""

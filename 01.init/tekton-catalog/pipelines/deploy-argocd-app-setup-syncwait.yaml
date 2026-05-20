@@ -8,7 +8,7 @@ spec:
     This Pipeline for argocd app deploy.
   params:
   - name: git-host-url
-    default: {{gitea_domain}}
+    default: "{{gitea_domain}}"
     type: string
   - name: code-repo-org
     default: sample
@@ -81,7 +81,7 @@ spec:
     name: cicd-fetch
     params:
     - name: gitInitImage
-      value: {{image_registry}}/nnd/tekton-cicd/git-init:v0.40.2-tz
+      value: "{{image_registry}}/nnd/tekton-cicd/git-init:v0.40.2-tz"
     - name: crtFileName
       value: ca-certificates.crt
     - name: sslVerify
@@ -115,7 +115,7 @@ spec:
     name: argocd-appsetup
     params:
     - name: IMAGE
-      value: {{image_registry}}/nnd/tekton-cicd/argocd:v2.11.3
+      value: "{{image_registry}}/nnd/tekton-cicd/argocd:v2.11.3"
     - name: SCRIPT
       value: |
         argocd login "$ARGOCD_SERVER" $ARGOCD_OPTS --username="$ARGOCD_USERNAME" --password="$ARGOCD_PASSWORD"
@@ -147,7 +147,7 @@ spec:
       - "false"
     params:
     - name: IMAGE
-      value: {{image_registry}}/nnd/tekton-cicd/argocd:v2.11.3
+      value: "{{image_registry}}/nnd/tekton-cicd/argocd:v2.11.3"
     - name: SCRIPT
       value: |
         argocd login "$ARGOCD_SERVER" $ARGOCD_OPTS --username="$ARGOCD_USERNAME" --password="$ARGOCD_PASSWORD"
@@ -177,7 +177,7 @@ spec:
     - name: CONTEXT_DIR
       value: $(params.working-pr-dir)/$(params.cicd-repo-name)
     - name: BASE_IMAGE
-      value: {{image_registry}}/nnd/tekton-cicd/chainguard-git:2.43.0
+      value: "{{image_registry}}/nnd/tekton-cicd/chainguard-git:2.43.0"
     - name: CRT_FILENAME
       value: ca-certificates.crt
     - name: USER_HOME
@@ -267,7 +267,7 @@ spec:
       - args:
         - $(params.ARGS)
         computeResources: {}
-        image: {{image_registry}}/nnd/tekton-cicd/tkn:v0.12.0
+        image: "{{image_registry}}/nnd/tekton-cicd/tkn:v0.12.0"
         name: tkn
         script: |
           if [ "$(workspaces.kubeconfig.bound)" = "true" ] && [ -e $(workspaces.kubeconfig.path)/kubeconfig ]; then

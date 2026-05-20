@@ -58,15 +58,16 @@ metadata:
   namespace: tekton-pipelines
 data:
   default-pod-template: |
-    nodeAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-        nodeSelectorTerms:
-        - matchExpressions:
-          - key: node-group
-            operator: In
-            values:
-            - node_group_name
-    nodeSelector:
-      kubernetes.io/hostname: {{node_selector}}
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+{%- for node in node_selector_list %}
+              - {{node}}
+{%- endfor %}
     securityContext:
       fsGroup: 65532

@@ -11,17 +11,17 @@ import inquirer
 import pexpect
 import subprocess
 from menu.util.component_api import *
-from menu.util.ui import draw_menu
+from menu.util.ui import draw_menu, safe_prompt
 
 # 필수 항목 및 기본값(플레이스홀더) 정의
 _REQUIRED_FIELDS = [
     'project_name', 'nks_master_server', 'node_selector', 'nnd_cluster_name',
     'nnd_domain_name', 'gitea_domain', 'gitea_host_url',
-    'image_registry', 'harbor_robot_auth',
-    'oauth_client_id', 'oauth_client_secret',
+    'image_registry',
     'nexus_domain',
-    'vm_ssh_private_key', 'vm_ssh_public_key',
 ]
+# oauth_client_id/secret 은 OIDC 사용 시만 필요,
+# vm_ssh_private/public_key 는 maven-spring-vm 파이프라인 사용 시만 필요 → 메뉴 진입 조건에서 제외
 _PLACEHOLDERS = {
     '-----BEGIN CERTIFICATE-----\n-----END CERTIFICATE-----',
     '-----BEGIN PRIVATE KEY-----\n-----END PRIVATE KEY-----',
@@ -39,7 +39,8 @@ def validate_config(data: dict) -> bool:
 
 _MENU1_NOTES = [
     '아래의 값들을 ./00.reset/tekton_init.toml 에 작성바랍니다.',
-    '- node_selector        : ND 컴포넌트가 실행될 노드(ex: worker-node-0)',
+    '- node_selector        : ND 컴포넌트가 실행될 노드  ※ 여러 노드: "worker-0,worker-1"',
+    '- cicd_cache_node_ip   : 캐시 노드 IP              ※ 여러 노드: "1.1.1.1,2.2.2.2"',
     '- nks_master_server    : nks 마스터서버 url',
     '- cicdbot_token        : 01.init 실행후 kubectl describe secret cicdbot token값을 반영',
     '- image_registry       : harbor 주소',
@@ -73,6 +74,7 @@ def menu1():
     # add_b64('harbor_robot_id', 'harbor_robot_pw', 'harbor_robot_auth')
     add_b64('harbor_admin_id', 'harbor_admin_pw', 'harbor_admin_auth')
     add_b64('git_cicd_id', 'git_cicd_pw', 'git_cicd_auth')
+    data['node_selector_list'] = [n.strip() for n in str(data.get('node_selector', '')).split(',') if n.strip()]
 
     # --- 메뉴 반복 ---
     while True:
@@ -100,7 +102,7 @@ def menu1():
             print('\033[31m' + "하위 패스의 경우 아래의 옵션도 추가 되어야 합니다." + '\033[0m')
             print('\033[33m' + "--grpc-web-root-path argocd" + '\033[0m')
             options = [inquirer.List("option", message="계속 진행하시겠습니까?", choices=['예', '아니오'])]
-            select = inquirer.prompt(options)
+            select = safe_prompt(options)
             if select and select['option'] == '예':
                 argocd_password_init(data)
         elif sel == 9:
@@ -115,14 +117,19 @@ def argocd_password_init(data):
     """
     init_component_id = [k for k in data if 'component_account_id' in k]
     subprocess.run(
-        f"./argocd-linux-amd64 login {data['argocd_host_url']} --skip-test-tls --grpc-web --insecure "
-        f"--username {data['argocd_admin_id']} --password {data['argocd_admin_pw']}",
-        shell=True, capture_output=True, text=True
+        ['./argocd-linux-amd64', 'login', data['argocd_host_url'],
+         '--skip-test-tls', '--grpc-web', '--insecure',
+         '--username', data['argocd_admin_id'],
+         '--password', data['argocd_admin_pw']],
+        capture_output=True, text=True
     )
     try:
         for item in init_component_id:
-            command = f"./argocd-linux-amd64 account update-password --account {data[item]}"
-            process = pexpect.spawn(command, encoding="utf-8", timeout=10, logfile=sys.stdout)
+            process = pexpect.spawn(
+                './argocd-linux-amd64',
+                args=['account', 'update-password', '--account', data[item]],
+                encoding="utf-8", timeout=10, logfile=sys.stdout
+            )
             process.sendline(data['argocd_admin_pw'])
             pw = data[item.replace('id', 'pw')]
             process.sendline(pw)
@@ -159,9 +166,10 @@ def init_yaml_create(result_path, init_data):
     menu1_3_file = result_path + '/01-3.init-oauth.yaml'
     menu1_4_file = result_path + '/01-4.init-argo.yaml'
     menu1_5_file = result_path + '/01-5.init-tekton-group-role.yaml'
+    menu1_6_file = result_path + '/01-6.init-cluster.yaml'
 
     # 결과 파일 초기화
-    for f in [menu1_file, menu1_2_file, menu1_3_file, menu1_4_file, menu1_5_file]:
+    for f in [menu1_file, menu1_2_file, menu1_3_file, menu1_4_file, menu1_5_file, menu1_6_file]:
         with open(f, 'w'):
             pass
 
@@ -170,6 +178,7 @@ def init_yaml_create(result_path, init_data):
     project1_3_file = open(menu1_3_file, 'a')
     project1_4_file = open(menu1_4_file, 'a')
     project1_5_file = open(menu1_5_file, 'a')
+    project1_6_file = open(menu1_6_file, 'a')
     try:
         # 파이프라인 파일 헤더
         project_file.write("apiVersion: v1\n")
@@ -205,6 +214,10 @@ def init_yaml_create(result_path, init_data):
             elif "/tekton-group-role/" in item_path:
                 project1_5_file.write("\n---\n")
                 project1_5_file.write(output)
+            elif item_path.split('/')[-2] == '01.init':
+                # 01.init 루트의 *cluster.yaml — 어플리케이션 클러스터 초기 설정
+                project1_6_file.write("\n---\n")
+                project1_6_file.write(output)
             else:
                 print(f"[WARN] {item} 분기 없음, 건너뜁니다.")
     finally:
@@ -213,6 +226,7 @@ def init_yaml_create(result_path, init_data):
         project1_3_file.close()
         project1_4_file.close()
         project1_5_file.close()
+        project1_6_file.close()
 
 def tekton_init_execute(result_path, init_data):
     """
@@ -222,7 +236,7 @@ def tekton_init_execute(result_path, init_data):
     """
     print('\033[31m' + "이미지 저장소로 harbor을 사용합니까?" + '\033[0m')
     options = [inquirer.List("option", message="계속 진행하시겠습니까?", choices=['예','아니오'])]
-    select = inquirer.prompt(options)
+    select = safe_prompt(options)
 
     init_yaml_create(result_path, init_data)
 
