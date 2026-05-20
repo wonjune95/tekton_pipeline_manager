@@ -274,17 +274,3 @@ def tekton_init_execute(result_path, init_data):
            .format(init_data['project_name'], init_data['project_name']))
     input('\033[0m계속하려면 엔터를 눌러주세요. ')
 
-def getchr():
-    """
-    (참고용) 터미널에서 한 글자만 입력받는 함수.
-    특수키, ESC, Ctrl+C 등 처리 가능.
-    """
-    import termios, tty
-    fd = sys.stdin.fileno()
-    old = termios.tcgetattr(fd)
-    tty.setraw(sys.stdin.fileno())
-    ch = sys.stdin.read(1)
-    termios.tcsetattr(fd, termios.TCSADRAIN, old)
-    if ord(ch) == 3:  # ^C
-        raise KeyboardInterrupt
-    return ch

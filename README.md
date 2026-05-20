@@ -34,6 +34,12 @@ cd python-package/rocky/
 chmod +x install.sh && sudo ./install.sh
 ```
 
+인터넷이 되는 환경에서는 pip로 직접 설치합니다.
+
+```bash
+pip install -r python-package/requirements.txt
+```
+
 ---
 
 ## 폴더 구조
@@ -74,10 +80,10 @@ tekton_pipeline_manager/
 │   ├── menu2_add_org.py
 │   ├── menu3_add_pipeline_runner.py
 │   ├── menu4_add_gitops.py
+│   ├── menu5_reset_cache.py
 │   └── util/
-│       ├── component_api.py            ← Harbor, Nexus, SonarQube API
-│       ├── gitea_api.py                ← Gitea API
-│       └── ui.py
+│       ├── component_api.py            ← Harbor, Nexus, SonarQube, Gitea API
+│       └── ui.py                       ← 메뉴 렌더링, 입력 검증
 │
 ├── python-package/                     ← 오프라인 설치 패키지 모음
 │   ├── ubuntu/  (debs/ + packages/)
@@ -141,15 +147,29 @@ python3 yaml_maker.py
 ```
 
 ```
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃                    Tekton Pipeline Manager                          ┃
-┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
-┃ 1. Tekton 초기화                                                    ┃
-┃ 2. 조직추가                                                         ┃
-┃ 3. 앱 파이프라인                                                    ┃
-┃ 4. 앱 GitOps                                                        ┃
-┃ 9. 종료                                                             ┃
-┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+  ╔════════════════════════════════════════════════════════════════╗
+  ║                                                                ║
+  ║  TEKTON  PIPELINE  MANAGER                                     ║
+  ║  project : MY_PROJECT_NAME                                     ║
+  ║                                                                ║
+  ╠════════════════════════════════════════════════════════════════╣
+  ║                                                                ║
+  ║  [ 1 ]  초기화      Tekton 인프라 초기 설정                    ║
+  ║  [ 2 ]  조직 추가   새 조직 및 네임스페이스 생성               ║
+  ║  [ 3 ]  파이프라인  앱 CI/CD 파이프라인 러너 생성              ║
+  ║  [ 4 ]  GitOps      GitOps 레포 생성 및 초기화                 ║
+  ║  [ 5 ]  캐시 초기화 캐시 노드 폴더 초기화                      ║
+  ║                                                                ║
+  ║  [ 9 ]  종료                                                   ║
+  ║                                                                ║
+  ╚════════════════════════════════════════════════════════════════╝
+```
+
+또는 메뉴 번호를 직접 지정하여 실행할 수도 있습니다.
+
+```bash
+python3 yaml_maker.py 1   # 초기화 바로 실행
+python3 yaml_maker.py 2   # 조직추가 바로 실행
 ```
 
 ---
@@ -171,8 +191,8 @@ Tekton, ArgoCD, Harbor, Nexus, Gitea, SonarQube의 계정·저장소를 자동 �
 ### 초기화 실행 시 처리 내용
 
 1. `01.init/` 템플릿을 렌더링하여 `result/{project_name}/`에 생성
-   - `01-1.init-basic.yaml` — Tekton 기본 리소스
-   - `01-2.init-pipeline.yaml` — Tekton Catalog (공통 Task)
+   - `01-1.init-basic.yaml` — Tekton 기본 리소스 (RBAC, ServiceAccount 등)
+   - `01-2.init-pipeline.yaml` — Tekton Catalog (공통 Task, Pipeline)
    - `01-3.init-oauth.yaml` — OAuth 설정
    - `01-4.init-argo.yaml` — ArgoCD 설정
    - `01-5.init-tekton-group-role.yaml` — Tekton 그룹 롤
@@ -245,15 +265,14 @@ kubectl get ClusterRoleBinding cicdbot -o yaml > ./02-2.add-organization/rbac.ya
 
 | 번호 | 기능 |
 |------|------|
-| 1 | 설정값 화면 확인 |
+| 1 | 설정값 화면 확인 (캐시 노드 IP 등) |
 | 2 | **조직추가 실행** |
-| 3 | CICD 캐시 폴더 재생성 (SSH) |
 
 ### 실행 시 처리 내용
 
 1. `02-1.add-storage-in-organization/` → 클러스터별 스토리지 YAML 생성
 2. `02-2.add-organization/` → 네임스페이스 + RBAC YAML 생성
-3. CICD 캐시 노드에 SSH 접속하여 `/CICD-DATA/local/{조직명}-cicd` 폴더 생성 (PEM 키 있을 때)
+3. `result/{project_name}/` 아래에 `.pem` 파일이 있으면 캐시 노드에 SSH 접속하여 `/CICD-DATA/local/{조직명}-cicd`, `/CICD-DATA/store/{조직명}-cicd` 폴더 자동 생성
 4. 결과 경로: `result/{project_name}/{조직명}-cicd/`
 
 ### 적용
@@ -262,13 +281,16 @@ kubectl get ClusterRoleBinding cicdbot -o yaml > ./02-2.add-organization/rbac.ya
 # 각 앱 클러스터에 스토리지 적용
 kubectl config use-context dev-be-cluster
 kubectl apply -f result/{project_name}/{조직명}-cicd/02-1.dev-be-cluster.yaml
-
 # ... stg, prod 클러스터도 동일하게 적용
 
 # CICD(ND) 클러스터에 조직 리소스 적용
 kubectl config use-context {nnd_cluster_name}
 kubectl apply -f result/{project_name}/{조직명}-cicd/02-2.add-organization.yaml
 ```
+
+> **주의**: 네이버와 NHN 환경의 RBAC 구조가 다를 수 있으므로, 적용 전 반드시 내용을 확인하세요.  
+> 사용 완료된 `./02-2.add-organization/rbac.yaml` 파일은 직접 삭제하세요.  
+> `02-1.add-storage-in-organization` 파일은 **각 어플리케이션 클러스터에서 나눠서 실행**하세요.
 
 ---
 
@@ -293,13 +315,13 @@ kubectl apply -f result/{project_name}/{조직명}-cicd/02-2.add-organization.ya
 | 4 | Backend — build(maven-spring) + deploy(VM SSH) |
 | 5 | Backend — build(gradle-boot) + deploy(ArgoCD) |
 | 6 | Backend — build(gradle-tomcat) + deploy(ArgoCD) |
-| 7 | Library — build(maven-library) |
+| 7 | Library — build(maven-library, nexus 배포) |
 
 ### 추가 입력 항목
 
 - **환경명**: `dev` / `stg` / `prod`
 - **브랜치명**: 트리거할 git 브랜치 (예: `dev`, `main`)
-- **배포 클러스터**: 목록에서 선택
+- **배포 클러스터**: 목록에서 선택 (유형 4·7 제외)
 
 ### 결과물 및 적용
 
@@ -323,23 +345,44 @@ Gitea에 GitOps 저장소를 만들고 배포용 YAML 템플릿을 자동으로 
 
 | 번호 | 설명 |
 |------|------|
-| 1 | Frontend — svc |
-| 2 | Frontend — ing (Ingress) |
+| 1 | Frontend — ing (Ingress) |
+| 2 | Frontend — svc |
 | 3 | Frontend — hpa-bluegreen |
 | 4 | Frontend — hpa-canary |
-| 5 | Backend — svc |
-| 6 | Backend — ing |
+| 5 | Backend — ing (Ingress) |
+| 6 | Backend — svc |
 | 7 | Backend — hpa-bluegreen |
 | 8 | Backend — hpa-canary |
 
 ### 처리 내용
 
 1. Gitea에 조직(`{조직명}-cicd`) 자동 생성
-2. Gitea에 저장소 자동 생성
+2. Gitea에 아래 저장소 자동 생성
    - `{앱명}-gitops` — ArgoCD가 바라보는 GitOps 저장소
-   - `{앱명}-dev` — 앱 소스 저장소 (dev)
-   - `{앱명}-prod` — 앱 소스 저장소 (prod)
+   - `{앱명}-dev` — 환경별 앱 소스 저장소 (dev)
+   - `{앱명}-stg` — 환경별 앱 소스 저장소 (stg)
+   - `{앱명}-prod` — 환경별 앱 소스 저장소 (prod)
 3. `04.gitea-source/` 템플릿을 렌더링하여 `{앱명}-gitops` 저장소에 push
+
+---
+
+## 메뉴 5: 캐시 초기화
+
+CICD 캐시 노드의 특정 조직 폴더를 삭제 후 재생성합니다.  
+빌드 캐시 오염 등의 문제가 발생했을 때 사용합니다.
+
+### 동작 방식
+
+- `result/{project_name}/` 에 `.pem` 파일이 있으면 SSH로 자동 실행
+- `.pem` 파일이 없으면 수동 실행 명령어를 출력
+
+```bash
+# 수동 실행 (각 캐시 노드에서)
+sudo rm -rf /CICD-DATA/local/{조직명}-cicd /CICD-DATA/store/{조직명}-cicd
+sudo mkdir -p /CICD-DATA/local/{조직명}-cicd /CICD-DATA/store/{조직명}-cicd
+```
+
+> **경고**: `yes`를 정확히 입력해야만 실행됩니다. 실수를 방지하기 위한 이중 확인입니다.
 
 ---
 
@@ -435,12 +478,41 @@ kubectl get cm argocd-cm -n argocd
 
 CoreDNS에 Gitea 호스트를 등록해야 합니다. Tekton RBAC 적용 환경에서 필수입니다.
 
-### SSH 접속 실패 (메뉴 2, 캐시 노드 폴더 생성)
+```bash
+# CoreDNS ConfigMap 수정 예시
+kubectl edit cm coredns -n kube-system
+# hosts 블록에 추가:
+# {gitea_node_ip}  gitea.{your_domain}
+```
+
+### SSH 접속 실패 (메뉴 2, 5 — 캐시 노드 폴더 생성)
 
 PEM 파일이 `result/{project_name}/` 폴더에 없는 경우입니다.  
 파일이 없으면 자동 생성을 건너뛰므로, 아래 명령어를 수동으로 실행하세요.
 
 ```bash
 ssh -i {pem_file} {cicd_cache_node_id}@{cicd_cache_node_ip} \
-  "sudo mkdir -p /CICD-DATA/local/{조직명}-cicd"
+  "sudo mkdir -p /CICD-DATA/local/{조직명}-cicd /CICD-DATA/store/{조직명}-cicd"
 ```
+
+### Git clone 실패 (메뉴 4)
+
+Gitea에 해당 조직(`{조직명}-cicd`) 또는 저장소(`{앱명}-gitops`)가 없으면 clone이 실패합니다.  
+메뉴 4는 내부적으로 저장소를 먼저 생성하지만, Gitea 연결 오류 시 수동 확인이 필요합니다.
+
+```bash
+# Gitea API로 조직 확인
+curl -H "Authorization: Basic {git_cicd_auth}" \
+  https://{gitea_domain}/api/v1/orgs
+```
+
+---
+
+## 보안 유의사항
+
+- `tekton_init.toml`과 `{project_name}-init_result.json`에는 패스워드, 토큰 등 민감 정보가 포함됩니다.  
+  Git에 커밋하지 않도록 `.gitignore`에 추가하거나 별도 보안 저장소에서 관리하세요.
+- `.pem` 파일은 SSH 프라이빗 키이므로 권한을 `600`으로 설정하세요.  
+  `chmod 600 result/{project_name}/*.pem`
+- Harbor, Nexus, Gitea API 호출 시 TLS 검증이 비활성화(`verify=False`)되어 있습니다.  
+  운영 환경에서는 자체 CA 인증서를 `verify` 파라미터에 지정하는 것을 권장합니다.

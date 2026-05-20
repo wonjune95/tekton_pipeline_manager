@@ -185,6 +185,7 @@ def choice_pipeline(env_dict):
         if int(choice) == 9:
             return ''
         if int(choice) < 1 or int(choice) >= len(selection_list):
+            print(f'\033[31m1~{len(selection_list)-1} 사이의 번호를 입력하세요.\033[0m')
             continue
         envVal = input('\033[96m생성할 환경명을 입력해주세요(소문자·숫자·하이픈, 예시: dev, stg, prod): \033[0m').strip()
         err = validate_k8s_name(envVal, '환경명')

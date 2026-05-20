@@ -193,9 +193,6 @@ def create_nexus_npm_group_repository(data):
             },
         "group": {
             "memberNames": ["npm-default"]
-            },
-        "raw": {
-            "contentDisposition": "ATTACHMENT"
             }
     }
     r = requests.post(url, headers=headers, data=json.dumps(payload),verify=False)
@@ -270,12 +267,15 @@ def create_sonar_token(data):
     else:
         print("create_sonar_token : " +str(r))
 
-def get_oragnizaion(data):
+def get_organization(data):
     url = data["gitea_domain"]+'/api/v1/orgs'
     headers = {'Content-Type':'application/json', 'Authorization':'Basic '+data['git_cicd_auth'], 'Accept':'application/json'}
     r = requests.get(url, headers=headers, verify=False)
     r.raise_for_status()
     return r.text
+
+# 하위 호환 alias (오타 버전)
+get_oragnizaion = get_organization
 
 def get_repos_in_orgs(data):
     url = data["gitea_domain"]+'/api/v1/orgs/'+ data['organization_name']+'/repos'
@@ -284,7 +284,7 @@ def get_repos_in_orgs(data):
     r.raise_for_status()
     return r.text
 
-def create_oragnizaion(data):
+def create_organization(data):
     url = data["gitea_domain"]+'/api/v1/orgs'
     headers = {'Content-Type':'application/json', 'Authorization':'Basic '+data['git_cicd_auth'], 'Accept':'application/json'}
     payload = {
@@ -297,6 +297,9 @@ def create_oragnizaion(data):
       "website": "https://nnd-cicd.injeinc.com"
     }
     r = requests.post(url, headers=headers, data=json.dumps(payload),verify=False)
+
+# 하위 호환 alias (오타 버전)
+create_oragnizaion = create_organization
 
 def create_gitops(data):
     url = data["gitea_domain"]+'/api/v1/orgs/'+data["organization_name"]+'-cicd/repos'

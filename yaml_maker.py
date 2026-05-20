@@ -15,6 +15,7 @@ from menu.menu1_init import menu1, validate_config
 from menu.menu2_add_org import menu2
 from menu.menu3_add_pipeline_runner import menu3
 from menu.menu4_add_gitops import menu4
+from menu.menu5_reset_cache import menu5
 
 # ======== 환경파일 LOAD 및 인증 정보 생성 ========
 
@@ -77,10 +78,11 @@ def print_menu():
     # 각 라인의 (content, visual_width) 를 미리 계산
     items = [
         # (번호, 이름, 이름_vcols, 설명, 설명_vcols)
-        ('1', '초기화',    6,  'Tekton 인프라 초기 설정',       23),
-        ('2', '조직 추가', 9,  '새 조직 및 네임스페이스 생성',  28),
-        ('3', '파이프라인',10, '앱 CI/CD 파이프라인 러너 생성', 29),
-        ('4', 'GitOps',    6,  'GitOps 레포 생성 및 초기화',    26),
+        ('1', '초기화',     6,  'Tekton 인프라 초기 설정',       23),
+        ('2', '조직 추가',  9,  '새 조직 및 네임스페이스 생성',  28),
+        ('3', '파이프라인', 10, '앱 CI/CD 파이프라인 러너 생성', 29),
+        ('4', 'GitOps',     6,  'GitOps 레포 생성 및 초기화',    26),
+        ('5', '캐시 초기화',11, '캐시 노드 폴더 초기화',         21),
     ]
 
     print()
@@ -118,9 +120,9 @@ def main():
         description='Tekton Pipeline Manager'
     )
     parser.add_argument(
-        'menu', nargs='?', type=int, choices=[1, 2, 3, 4],
+        'menu', nargs='?', type=int, choices=[1, 2, 3, 4, 5],
         metavar='MENU',
-        help='메뉴 번호 직접 실행  1:초기화  2:조직추가  3:파이프라인  4:GitOps'
+        help='메뉴 번호 직접 실행  1:초기화  2:조직추가  3:파이프라인  4:GitOps  5:캐시초기화'
     )
     args = parser.parse_args()
 
@@ -132,6 +134,7 @@ def main():
         2: menu2,
         3: menu3,
         4: menu4,
+        5: menu5,
     }
 
     if args.menu:
@@ -140,18 +143,18 @@ def main():
 
     while True:
         print_menu()
-        munu_number = input('\033[1;96m[ 메뉴를 선택하세요 ] ▶ \033[0m').strip()
-        if not munu_number.isdigit():
+        menu_number = input('\033[1;96m[ 메뉴를 선택하세요 ] ▶ \033[0m').strip()
+        if not menu_number.isdigit():
             print('\033[31m숫자만 입력 가능합니다. 다시 시도하세요.\033[0m')
             continue
-        munu_number = int(munu_number)
-        if munu_number in menu_actions:
-            menu_actions[munu_number]()
-        elif munu_number == 9:
+        menu_number = int(menu_number)
+        if menu_number in menu_actions:
+            menu_actions[menu_number]()
+        elif menu_number == 9:
             print('\033[95m프로그램을 종료합니다.\033[0m')
             break
         else:
-            print('\033[31m메뉴내의 숫자만 입력 가능합니다. 입력된 값 : {}\033[0m'.format(munu_number))
+            print('\033[31m메뉴내의 숫자만 입력 가능합니다. 입력된 값 : {}\033[0m'.format(menu_number))
 
 if __name__ == "__main__":
     main()

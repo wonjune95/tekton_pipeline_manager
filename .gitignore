@@ -12,3 +12,6 @@ result/
 .idea/
 .vscode/
 *.swp
+
+# Claude Code 내부 디렉토리
+.claude/
