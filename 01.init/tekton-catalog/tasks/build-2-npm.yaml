@@ -1,0 +1,55 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: npm
+  namespace: tekton-catalog
+spec:
+  description: This Task can be used to run a npm build. It uses a workspace to store npm local cache.
+  params:
+    - default: bash:5.2.21
+      name: BASH_IMAGE
+      type: string
+    - default: node:latest
+      name: NODE_IMAGE
+      type: string
+    - default: npm install
+      name: NPM_COMMAND
+      type: string
+    - default: .
+      name: CONTEXT_DIR
+      type: string
+  steps:
+    - computeResources: {}
+      image: $(params.BASH_IMAGE)
+      name: npmrc-settings
+      script: |
+        #!/bin/sh
+        cp $(workspaces.npmrc-settings.path)/.npmrc $(workspaces.source.path)/$(params.CONTEXT_DIR)/.npmrc
+        echo ".npmrc copied to $(workspaces.source.path)/$(params.CONTEXT_DIR)/.npmrc"
+        find $(workspaces.source.path)/$(params.CONTEXT_DIR) -type f -name .npmrc | xargs -I {} cp $(workspaces.npmrc-settings.path)/.npmrc {}
+        
+    - computeResources: {}
+      env:
+        - name: TZ
+          value: Asia/Seoul
+        - name: NPM_CONFIG_USERCONFIG
+          value: $(workspaces.source.path)/$(params.CONTEXT_DIR)/.npmrc
+        - name: BROWSERSLIST_IGNORE_OLD_DATA
+          value: 'true'
+      image: $(params.NODE_IMAGE)
+      name: npm-command
+      script: |
+        $(params.NPM_COMMAND)
+        
+      workingDir: $(workspaces.source.path)/$(params.CONTEXT_DIR)
+  workspaces:
+    - name: source
+    - name: npmrc-settings
+    - mountPath: /etc/ssl/certs
+      name: ssl-ca-directory
+      optional: true
+    - name: npm-local-cache
+      optional: true
+    - mountPath: $(workspaces.source.path)/$(params.CONTEXT_DIR)/node_modules
+      name: node_modules
+      optional: true

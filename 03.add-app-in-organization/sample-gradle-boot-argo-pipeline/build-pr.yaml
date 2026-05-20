@@ -1,0 +1,114 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  labels:
+    app: {{application_name}}
+    env: {{env_menu}}
+    type: build
+  name: {{application_name}}-{{env_menu}}-build-pr
+  namespace: {{organization_name}}-cicd
+spec:
+  params:
+  - name: git-host-url
+    value: {{gitea_domain}}
+  - name: code-repo-org
+    value: {{organization_name}}
+  - name: code-repo-name
+    value: {{application_name}}
+  - name: code-repo-url
+    value: $(params.git-host-url)/$(params.code-repo-org)/$(params.code-repo-name).git
+  - name: code-revision
+    value: {{branch_menu}}
+  - name: code-branch
+    value: {{branch_menu}}
+  - name: java-version
+    value: "17"
+  - name: build-profile
+    value: {{env_menu}}
+  - name: active-profile
+    value: {{env_menu}}
+  - name: artifact-find-pattern
+    value: target/*.jar
+  - name: artifact-rename
+    value: ""
+  - name: skip-code-test
+    value: "false"
+  - name: skip-code-analysis
+    value: "false"
+  - name: skip-code-artifact
+    value: "false"
+  - name: skip-write-dockerfile
+    value: "false"
+  - name: skip-image-scan
+    value: "false"
+  - name: skip-polaris-audit
+    value: "false"
+  - name: skip-deploy-trigger
+    value: "false"
+  - name: app-env
+    value: {{env_menu}}
+  - name: app-namespace
+    value: {{organization_name}}-{{env_menu}}
+  - name: app-name
+    value: $(params.code-repo-name)
+  - name: app-image
+    value: {{image_registry}}/$(params.app-namespace)/$(params.code-repo-org)/$(params.app-name)
+  - name: gitops-repo-org
+    value: $(params.code-repo-org)-cicd
+  - name: gitops-repo-name
+    value: $(params.code-repo-name)-gitops
+  - name: gitops-repo-url
+    value: $(params.git-host-url)/$(params.gitops-repo-org)/$(params.gitops-repo-name).git
+  - name: cicd-repo-org
+    value: $(params.code-repo-org)-cicd
+  - name: cicd-repo-name
+    value: $(params.code-repo-name)-$(params.app-env)
+  - name: cicd-repo-url
+    value: $(params.git-host-url)/$(params.cicd-repo-org)/$(params.cicd-repo-name).git
+  - name: deploy-el-name
+    value: $(params.code-repo-name)-$(params.app-env)-deploy-el
+  pipelineRef:
+    params:
+    - name: kind
+      value: pipeline
+    - name: name
+      value: build-gradle-spring-boot-image
+    - name: namespace
+      value: tekton-catalog
+    resolver: cluster
+  status: PipelineRunPending
+  taskRunTemplate:
+    serviceAccountName: cicdbot
+  timeouts:
+    pipeline: 1h0m0s
+  workspaces:
+  - name: shared-data
+    persistentVolumeClaim:
+      claimName: cicdvol-shared-local-pvc
+    subPath: $(params.code-repo-name)
+  - name: gitconfig
+    secret:
+      secretName: cicdbot-gitconfig-secret
+  - name: ssl-ca-directory
+    secret:
+      secretName: cicdssl-cacerts-secret
+  - name: gradle-settings
+    secret:
+      secretName: cicdbot-nexus-secret
+  - name: gradle-local-repo
+    persistentVolumeClaim:
+      claimName: cicdvol-shared-local-pvc
+    subPath: .gradle-local-repo
+  - name: sonar-credentials
+    secret:
+      secretName: cicdbot-sonarqube-secret
+  - name: dockerconfig
+    secret:
+      secretName: cicdbot-dockerconfig-secret
+  - name: trivy-local-cache
+    persistentVolumeClaim:
+      claimName: cicdvol-shared-local-pvc
+    subPath: .trivy-local-cache
+  - name: kubeconfig
+    secret:
+      secretName: cicdbot-kubeconfig-secret

@@ -1,0 +1,531 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: build-maven-spring-artifact
+  namespace: tekton-catalog
+spec:
+  description: |
+    This Pipeline for spring artifact build. (execution on a VM)
+  params:
+  - name: git-host-url
+    default: {{gitea_domain}}
+    type: string
+  - name: code-repo-org
+    default: sample
+    type: string
+  - name: code-repo-name
+    default: sample-egov2vm
+    type: string
+  - name: code-repo-url
+    description: Code Repository URL to clone from.
+    default:  $(params.git-host-url)/$(params.code-repo-org)/$(params.code-repo-name).git
+    type: string
+  - name: code-revision
+    description: Revision to checkout. (branch, tag, sha, ref, etc...)
+    default: main
+    type: string
+  - name: java-version
+    default: "8"
+    type: string
+  - name: artifact-find-pattern
+    default: target/*.war
+    type: string
+  - name: artifact-rename
+    default: egov2vm.war
+    type: string
+  - name: skip-code-test
+    default: "false"
+    type: string
+  - name: skip-code-analysis
+    default: "false"
+    type: string
+  - name: skip-code-artifact
+    default: "false"
+    type: string
+  - name: skip-deploy-trigger
+    default: "true"
+    type: string
+  - name: app-env
+    default: tdev
+    type: string
+  - name: app-name
+    default: $(params.code-repo-name)
+    type: string
+  - name: cicd-repo-org
+    default: $(params.code-repo-org)-cicd
+    type: string
+  - name: cicd-repo-name
+    default: $(params.code-repo-name)-$(params.app-env)
+    type: string
+  - name: cicd-repo-url
+    default: $(params.git-host-url)/$(params.code-repo-org)-cicd/$(params.code-repo-name)-$(params.app-env).git
+    type: string
+  - name: cicd-auto-tag
+    default: $(tasks.code-fetch.results.cicd-auto-tag-prefix)$(context.pipelineRun.name)
+    type: string
+  - name: deploy-el-name
+    default: $(params.code-repo-name)-$(params.app-env)-deploy-el
+    type: string
+  - name: working-pr-dir
+    default: $(context.pipelineRun.name)
+    type: string
+  tasks:
+  - displayName: Code Fetch
+    name: code-fetch
+    params:
+    - name: gitInitImage
+      value: {{image_registry}}/nnd/tekton-cicd/git-init:v0.40.2-tz
+    - name: crtFileName
+      value: ca-certificates.crt
+    - name: sslVerify
+      value: "false"
+    - name: deleteExisting
+      value: "true"
+    - name: subdirectory
+      value: $(params.working-pr-dir)/$(params.code-repo-name)
+    - name: url
+      value: $(params.code-repo-url)
+    - name: revision
+      value: $(params.code-revision)
+    taskRef:
+      kind: Task
+      params:
+      - name: kind
+        value: task
+      - name: name
+        value: git-clone
+      - name: namespace
+        value: tekton-catalog
+      resolver: cluster
+    workspaces:
+    - name: output
+      workspace: shared-data
+    - name: basic-auth
+      workspace: gitconfig
+    - name: ssl-ca-directory
+      workspace: ssl-ca-directory
+  - displayName: Code Build
+    name: code-build
+    params:
+    - name: BASH_IMAGE
+      value: {{image_registry}}/nnd/tekton-cicd/bash:5.2.21
+    - name: MAVEN_IMAGE
+      value: {{image_registry}}/nnd/tekton-cicd/maven:3.9.5-eclipse-temurin-$(params.java-version)
+    - name: CONTEXT_DIR
+      value: $(params.working-pr-dir)/$(params.code-repo-name)
+    - name: GOALS
+      value:
+      - clean
+      - package
+      - -B
+      - -U
+      - -P$(params.app-env)
+      - -DskipTests=true
+      - -Dmaven.test.skip=true
+    - name: ARTIFACT_FIND_PATTERN
+      value: $(params.artifact-find-pattern)
+    - name: ARTIFACT_RENAME
+      value: $(params.artifact-rename)
+    runAfter:
+    - code-fetch
+    taskRef:
+      kind: Task
+      params:
+      - name: kind
+        value: task
+      - name: name
+        value: maven
+      - name: namespace
+        value: tekton-catalog
+      resolver: cluster
+    workspaces:
+    - name: source
+      workspace: shared-data
+    - name: ssl-ca-directory
+      workspace: ssl-ca-directory
+    - name: maven-settings
+      workspace: maven-settings
+    - name: maven-local-repo
+      workspace: maven-local-repo
+  - displayName: Code JunitTest
+    name: code-test
+    when:
+    # - input: $(params.app-env)
+    #   operator: in
+    #   values:
+    #   - dev
+    - input: $(params.skip-code-test)
+      operator: in
+      values:
+      - "false"
+    params:
+    - name: BASH_IMAGE
+      value: {{image_registry}}/nnd/tekton-cicd/bash:5.2.21
+    - name: MAVEN_IMAGE
+      value: {{image_registry}}/nnd/tekton-cicd/maven:3.9.5-eclipse-temurin-$(params.java-version)
+    - name: CONTEXT_DIR
+      value: $(params.working-pr-dir)/$(params.code-repo-name)
+    - name: GOALS
+      value:
+      - surefire-report:report
+      - -B
+      - -U
+      - -P$(params.app-env)
+      - -DskipTests=false
+      - -Dmaven.test.skip=false
+    - name: ARTIFACT_FIND_PATTERN
+      value: $(params.artifact-find-pattern)
+    - name: ARTIFACT_RENAME
+      value: $(params.artifact-rename)
+    runAfter:
+    - code-build
+    taskRef:
+      kind: Task
+      params:
+      - name: kind
+        value: task
+      - name: name
+        value: maven
+      - name: namespace
+        value: tekton-catalog
+      resolver: cluster
+    workspaces:
+    - name: source
+      workspace: shared-data
+    - name: ssl-ca-directory
+      workspace: ssl-ca-directory
+    - name: maven-settings
+      workspace: maven-settings
+    - name: maven-local-repo
+      workspace: maven-local-repo
+  - displayName: Code Analysis
+    name: code-analysis
+    when:
+    # - input: $(params.app-env)
+    #   operator: in
+    #   values:
+    #   - dev
+    - input: $(params.skip-code-analysis)
+      operator: in
+      values:
+      - "false"
+    params:
+    - name: CONTEXT_DIR
+      value: $(params.working-pr-dir)/$(params.code-repo-name)
+    - name: SONAR_HOST_URL
+      value: {{sonar_host_url_internal}}
+    - name: SONAR_PROJECT_KEY
+      value: $(params.code-repo-name)
+    - name: PROJECT_VERSION
+      value: $(tasks.code-build.results.version)
+    - name: SOURCE_TO_SCAN
+      value: .
+    - name: SONAR_SCANNER_IMAGE
+      value: {{image_registry}}/nnd/tekton-cicd/sonar-scanner-cli:5.0.1
+    - name: SONAR_LOGIN_KEY
+      value: login
+    - name: SONAR_PASSWORD_KEY
+      value: password
+    - name: SONAR_LINKS_CI
+      value: {{tekton_domain}}/#/namespaces/$(context.pipelineRun.namespace)/pipelineruns/$(context.pipelineRun.name)?pipelineTask=code-analysis&step=sonar-scan
+    - name: SONAR_LINKS_SCM
+      value: $(params.code-repo-url)
+    - name: SONAR_LANGUAGE
+      value: java
+    - name: SONAR_INCLUSIONS
+      value: src/**/*.java
+    - name: SONAR_JAVA_SOURCE
+      value: $(params.java-version)
+    - name: SONAR_JAVA_BINARIES
+      value: target/classes
+    - name: SONAR_JAVA_LIBRARIES
+      value: target/**/*.jar
+      # value: "$(workspaces.maven-local-repo.path)/.m2/**/*.jar"
+    - name: SONAR_JUNIT_REPORTPATHS
+      value: target/surefire-reports
+    - name: SONAR_PROP_IMAGE
+      value: {{image_registry}}/nnd/tekton-cicd/bash:5.2.21
+    - name: SONAR_BRANCH_NAME
+      value: $(params.code-revision)
+    runAfter:
+    - code-test
+    taskRef:
+      kind: Task
+      params:
+      - name: kind
+        value: task
+      - name: name
+        value: sonarqube-scanner
+      - name: namespace
+        value: tekton-catalog
+      resolver: cluster
+    workspaces:
+    - name: source
+      workspace: shared-data
+    - name: ssl-ca-directory
+      workspace: ssl-ca-directory
+    - name: sonar-credentials
+      workspace: sonar-credentials
+    - name: maven-local-repo
+      workspace: maven-local-repo
+  - displayName: Code Artifact
+    name: code-artifact
+    when:
+    # - input: $(params.app-env)
+    #   operator: in
+    #   values:
+    #   - dev
+    - input: $(params.skip-code-artifact)
+      operator: in
+      values:
+      - "false"
+    params:
+    - name: BASH_IMAGE
+      value: {{image_registry}}/nnd/tekton-cicd/bash:5.2.21
+    - name: MAVEN_IMAGE
+      value: {{image_registry}}/nnd/tekton-cicd/maven:3.9.5-eclipse-temurin-$(params.java-version)
+    - name: CONTEXT_DIR
+      value: $(params.working-pr-dir)/$(params.code-repo-name)
+    - name: GOALS
+      value:
+      - deploy
+      - -B
+      - -U
+      - -P$(params.app-env)
+      - -DskipTests=true
+      - -Dmaven.test.skip=true
+    - name: ARTIFACT_FIND_PATTERN
+      value: $(params.artifact-find-pattern)
+    - name: ARTIFACT_RENAME
+      value: $(params.artifact-rename)
+    runAfter:
+    - code-analysis
+    taskRef:
+      kind: Task
+      params:
+      - name: kind
+        value: task
+      - name: name
+        value: maven
+      - name: namespace
+        value: tekton-catalog
+      resolver: cluster
+    workspaces:
+    - name: source
+      workspace: shared-data
+    - name: ssl-ca-directory
+      workspace: ssl-ca-directory
+    - name: maven-settings
+      workspace: maven-settings
+    - name: maven-local-repo
+      workspace: maven-local-repo
+  - displayName: Artifact Store
+    name: artifact-store
+    params:
+    - name: SCRIPT
+      value: |
+        ARTIFACT_SOURCE_PATH=$(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-repo-name)/$(tasks.code-build.results.buildDirectory)
+        ARTIFACT_STORE_BASE=$(workspaces.store.path)/$(params.cicd-repo-name)
+        ARTIFACT_STORE_PATH=$ARTIFACT_STORE_BASE/$(params.cicd-auto-tag)
+        mkdir -p $ARTIFACT_STORE_PATH
+        cp $ARTIFACT_SOURCE_PATH/$(tasks.code-build.results.artifactSourceName) $ARTIFACT_STORE_PATH/$(tasks.code-build.results.artifactTargetName)
+        echo -n "$ARTIFACT_STORE_PATH/$(tasks.code-build.results.artifactTargetName)" > "$(results.fullPathStoreName.path)"
+        echo "########## FIND STORED ARTIFACTS ##########"
+        find $ARTIFACT_STORE_BASE -mindepth 2 -maxdepth 2 | sort -r
+    runAfter:
+    - code-artifact
+    taskSpec:
+      metadata: {}
+      params:
+      - name: SCRIPT
+        type: string
+      results:
+      - name: fullPathStoreName
+        type: string
+      spec: null
+      steps:
+      - computeResources: {}
+        image: {{image_registry}}/nnd/tekton-cicd/ubuntu:jammy
+        name: store
+        script: |
+          #!/usr/bin/env bash
+          eval '$(params.SCRIPT)'
+      workspaces:
+      - name: store
+      - name: source
+    workspaces:
+    - name: store
+      workspace: stored-data
+    - name: source
+      workspace: shared-data
+  - displayName: CICD Repo Fetch
+    name: cicd-fetch
+    params:
+    - name: gitInitImage
+      value: {{image_registry}}/nnd/tekton-cicd/git-init:v0.40.2-tz
+    - name: crtFileName
+      value: ca-certificates.crt
+    - name: sslVerify
+      value: "false"
+    - name: deleteExisting
+      value: "true"
+    - name: subdirectory
+      value: $(params.working-pr-dir)/$(params.cicd-repo-name)
+    - name: url
+      value: $(params.cicd-repo-url)
+    - name: revision
+      value: main
+    runAfter:
+    - artifact-store
+    taskRef:
+      kind: Task
+      params:
+      - name: kind
+        value: task
+      - name: name
+        value: git-clone
+      - name: namespace
+        value: tekton-catalog
+      resolver: cluster
+    workspaces:
+    - name: output
+      workspace: shared-data
+    - name: basic-auth
+      workspace: gitconfig
+    - name: ssl-ca-directory
+      workspace: ssl-ca-directory
+  - displayName: Copy to CICD Repo Push
+    name: cicd-push
+    params:
+    - name: CONTEXT_DIR
+      value: $(params.working-pr-dir)/$(params.cicd-repo-name)
+    - name: BASE_IMAGE
+      value: {{image_registry}}/nnd/tekton-cicd/chainguard-git:2.43.0
+    - name: CRT_FILENAME
+      value: ca-certificates.crt
+    - name: USER_HOME
+      value: /home/git
+    - name: GIT_USER_NAME
+      value: cicdbot
+    - name: GIT_USER_EMAIL
+      value: cicdbot@example.com
+    - name: GIT_SCRIPT
+      value: |
+        git checkout main
+        git pull
+
+        find . -mindepth 1 -maxdepth 1 -not -name ".*" | xargs -r rm -rf
+
+        BUILD_TAG=$(params.cicd-auto-tag)
+        # ARTIFACT_SOURCE_PATH=$(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-repo-name)/$(tasks.code-build.results.buildDirectory)
+        # cp $ARTIFACT_SOURCE_PATH/$(tasks.code-build.results.artifactSourceName) $(tasks.code-build.results.artifactTargetName)
+
+        echo $BUILD_TAG > README.md
+        echo "fullPathStoreName=$(tasks.artifact-store.results.fullPathStoreName)" > ARTIFACT.txt
+
+        git add .
+        git commit -m $BUILD_TAG
+        git tag $BUILD_TAG $(git rev-parse --short HEAD)
+        git push origin main $BUILD_TAG
+
+    runAfter:
+    - cicd-fetch
+    taskRef:
+      kind: Task
+      params:
+      - name: kind
+        value: task
+      - name: name
+        value: git-cli
+      - name: namespace
+        value: tekton-catalog
+      resolver: cluster
+    workspaces:
+    - name: source
+      workspace: shared-data
+    - name: basic-auth
+      workspace: gitconfig
+    - name: ssl-ca-directory
+      workspace: ssl-ca-directory
+  finally:
+  - displayName: Deploy Trigger
+    name: deploy-trigger
+    when:
+    - input: $(tasks.status)
+      operator: in
+      values:
+      - Completed
+      - Succeeded
+    - input: $(params.skip-deploy-trigger)
+      operator: in
+      values:
+      - "false"
+    params:
+    - name: curl-image
+      value: {{image_registry}}/nnd/tekton-cicd/curl:8.5.0
+    - name: url
+      value: el-$(params.deploy-el-name).$(context.pipelineRun.namespace).svc:8080
+    - name: options
+      value:
+      - -X
+      - POST
+      - --data
+      - "{\"git-host-url\": \"$(params.git-host-url)\", \"code-repo-org\": \"$(params.code-repo-org)\", \"code-repo-name\": \"$(params.code-repo-name)\", \"cicd-revision\": \"$(params.cicd-auto-tag)\"}"
+    taskRef:
+      kind: Task
+      params:
+      - name: kind
+        value: task
+      - name: name
+        value: curl
+      - name: namespace
+        value: tekton-catalog
+      resolver: cluster
+  - displayName: Cleanup Policy
+    name: cleanup-policy
+    params:
+    - name: SCRIPT
+      value: |
+        find $(workspaces.source.path) -mindepth 1 -maxdepth 1 -type d -name "$(params.working-pr-dir)" | xargs -r rm -rf
+
+        tkn pipelinerun delete --force --keep 0 --all $1 -n $(context.pipelineRun.namespace)
+        tkn pipelinerun list $1 -n $(context.pipelineRun.namespace)
+    - name: ARGS
+      value:
+      - --label app=$(params.app-name),env=$(params.app-env),type=build,tekton.dev/pipeline!=$(params.app-name)-$(params.app-env)-build-pr
+    taskSpec:
+      metadata: {}
+      params:
+      - name: SCRIPT
+        type: string
+      - name: ARGS
+        type: array
+      spec: null
+      steps:
+      - args:
+        - $(params.ARGS)
+        computeResources: {}
+        image: {{image_registry}}/nnd/tekton-cicd/tkn:v0.12.0
+        name: tkn
+        script: |
+          if [ "$(workspaces.kubeconfig.bound)" = "true" ] && [ -e $(workspaces.kubeconfig.path)/kubeconfig ]; then
+            export KUBECONFIG="$(workspaces.kubeconfig.path)"/kubeconfig
+          fi
+          eval "$(params.SCRIPT)"
+      workspaces:
+      - name: source
+      - name: kubeconfig
+    workspaces:
+    - name: source
+      workspace: shared-data
+    - name: kubeconfig
+      workspace: kubeconfig
+  workspaces:
+  - name: stored-data
+  - name: shared-data
+  - name: gitconfig
+  - name: ssl-ca-directory
+  - name: maven-settings
+  - name: maven-local-repo
+  - name: sonar-credentials
+  - name: kubeconfig

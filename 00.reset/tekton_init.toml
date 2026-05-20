@@ -1,0 +1,200 @@
+# ════════════════════════════════════════════════════════
+# 1. 프로젝트 기본 정보
+# ════════════════════════════════════════════════════════
+project_name = "MY_PROJECT_NAME"
+
+
+# ════════════════════════════════════════════════════════
+# 2. Kubernetes 클러스터 (NKS/ND)
+#
+#   nks_cert_auth_data : kubectl config view --raw 에서 certificate-authority-data 값
+#   nks_master_server  : kubectl config view --raw 에서 server 값
+#   node_selector      : CICD 파이프라인이 실행될 워커 노드명
+#   nnd_cluster_name   : kubectl config get-contexts 에서 CURRENT 컨텍스트명
+#   nnd_domain_name    : ND 클러스터 도메인 (nip.io 형식 가능)
+#   cicdbot_token      : 01.init 적용 후 아래 명령어로 취득 후 입력
+#                        kubectl describe secret cicdbot -n default | grep token: | awk '{print $2}'
+# ════════════════════════════════════════════════════════
+nks_cert_auth_data = ""
+nks_master_server  = "https://YOUR_MASTER_SERVER_IP:6443"
+node_selector      = "YOUR_WORKER_NODE_NAME"
+nnd_cluster_name   = "YOUR_KUBECTL_CONTEXT_NAME"
+nnd_domain_name    = "YOUR_CLUSTER_IP.nip.io"
+cicdbot_token      = ""
+
+
+# ════════════════════════════════════════════════════════
+# 3. OAuth 설정
+#
+#   Gitea 관리자 > Settings > Applications 에서 OAuth2 App 등록 후 발급
+# ════════════════════════════════════════════════════════
+oauth_client_id     = ""
+oauth_client_secret = ""
+
+
+# ════════════════════════════════════════════════════════
+# 4. 이미지 레지스트리 (Harbor)
+#
+#   harbor_robot_auth : menu1 초기화 실행 시 자동 생성됨 (직접 입력 불필요)
+#   harbor_robot_pw   : menu1 초기화 실행 시 자동 생성됨 (직접 입력 불필요)
+# ════════════════════════════════════════════════════════
+image_registry    = "YOUR_HARBOR_HOST:PORT"
+harbor_ca         = ""
+harbor_admin_id   = "admin"
+harbor_admin_pw   = "YOUR_HARBOR_ADMIN_PW"
+harbor_id         = "YOUR_HARBOR_USER_ID"
+harbor_pw         = "YOUR_HARBOR_USER_PW"
+harbor_robot_id   = "robot.regcred"
+harbor_robot_pw   = ""
+harbor_robot_auth = ""
+
+
+# ════════════════════════════════════════════════════════
+# 5. 컴포넌트 관리자 계정
+#
+#   각 컴포넌트(Gitea/Nexus/ArgoCD/SonarQube)의 admin 계정 정보
+# ════════════════════════════════════════════════════════
+gitea_admin_id  = "YOUR_GITEA_ADMIN_ID"
+gitea_admin_pw  = "YOUR_GITEA_ADMIN_PW"
+nexus_admin_id  = "admin"
+nexus_admin_pw  = "YOUR_NEXUS_ADMIN_PW"
+argocd_admin_id = "admin"
+argocd_admin_pw = "YOUR_ARGOCD_ADMIN_PW"
+sonar_admin_id  = "admin"
+sonar_admin_pw  = "YOUR_SONAR_ADMIN_PW"
+
+
+# ════════════════════════════════════════════════════════
+# 6. CICD 봇 서비스 계정
+#
+#   component_account_id/pw_1~3 : menu1 초기화 시 순차적으로 계정 생성됨
+#   git_cicd / nexus / argocd / sonar : cicdbot 계정으로 통일 권장
+#   sonar_token : menu1 초기화 실행 시 자동 생성됨 (직접 입력 불필요)
+# ════════════════════════════════════════════════════════
+component_account_id_1 = "cicdbot"
+component_account_pw_1 = "YOUR_CICDBOT_PW"
+component_account_id_2 = "devopsadmin"
+component_account_pw_2 = "YOUR_DEVOPSADMIN_PW"
+component_account_id_3 = "cicdmanager"
+component_account_pw_3 = "YOUR_CICDMANAGER_PW"
+git_cicd_id = "cicdbot"
+git_cicd_pw = "YOUR_CICDBOT_PW"
+nexus_id    = "cicdbot"
+nexus_pw    = "YOUR_CICDBOT_PW"
+argocd_id   = "cicdbot"
+argocd_pw   = "YOUR_CICDBOT_PW"
+sonar_id    = "cicdbot"
+sonar_token = ""
+
+
+# ════════════════════════════════════════════════════════
+# 7. 외부 접속 URL (도메인)
+#
+#   *_domain  : http(s) 포함 전체 URL  (예: http://1.2.3.4/gitea)
+#   *_host_url: 스킴 없이 host/path 만  (예: 1.2.3.4/gitea)
+# ════════════════════════════════════════════════════════
+argocd_host_url  = "YOUR_CLUSTER_IP.nip.io/argocd"
+tekton_domain    = "http://YOUR_CLUSTER_IP.nip.io/tekton"
+tekton_host_url  = "YOUR_CLUSTER_IP.nip.io/tekton"
+gitea_domain     = "http://YOUR_CLUSTER_IP.nip.io/gitea"
+gitea_host_url   = "YOUR_CLUSTER_IP.nip.io/gitea"
+sonar_domain     = "http://YOUR_CLUSTER_IP:PORT"
+nexus_domain     = "http://YOUR_CLUSTER_IP:PORT/nexus"
+nexus_host_url   = "YOUR_CLUSTER_IP:PORT"
+nexus_npm_url    = "YOUR_CLUSTER_IP:PORT/repository/npm-default-group/"
+nexus_maven_url  = "YOUR_CLUSTER_IP:PORT/repository/maven-default-group/"
+nexus_raw_url    = "YOUR_CLUSTER_IP:PORT/repository/raw-default-group/"
+
+
+# ════════════════════════════════════════════════════════
+# 8. 클러스터 내부 서비스 URL (기본값 유지 권장)
+# ════════════════════════════════════════════════════════
+sonar_host_url_internal          = "http://sonarqube.devops-tools.svc:9000"
+nexus_host_url_internal          = "http://nexus-repository-manager.devops-tools.svc:8081"
+nexus_host_url_rawfile_internal  = "http://nexus-repository-manager.devops-tools.svc:8081/repository/raw-default-group"
+gitea_host_url_internal          = "http://gitea-service.devops-tools.svc:3000"
+gitea_host_internal              = "gitea-service.devops-tools.svc:3000"
+
+
+# ════════════════════════════════════════════════════════
+# 9. 배포 대상 클러스터 API 주소
+#
+#   prod 클러스터가 ND 클러스터 자신이면 https://kubernetes.default.svc 사용
+# ════════════════════════════════════════════════════════
+dev_back_deploy_cluster   = "https://YOUR_DEV_BACK_CLUSTER_ENDPOINT:6443"
+stg_back_deploy_cluster   = "https://YOUR_STG_BACK_CLUSTER_ENDPOINT:6443"
+prod_back_deploy_cluster  = "https://kubernetes.default.svc"
+dev_front_deploy_cluster  = "https://YOUR_DEV_FRONT_CLUSTER_ENDPOINT:6443"
+stg_front_deploy_cluster  = "https://YOUR_STG_FRONT_CLUSTER_ENDPOINT:6443"
+prod_front_deploy_cluster = "https://kubernetes.default.svc"
+
+
+# ════════════════════════════════════════════════════════
+# 10. NAS 스토리지 설정
+# ════════════════════════════════════════════════════════
+dev_backend_nas_ip    = "YOUR_DEV_NAS_IP"
+dev_backend_nas_path  = "/YOUR_NAS_PATH"
+dev_frontend_nas_ip   = "YOUR_DEV_NAS_IP"
+dev_frontend_nas_path = "/YOUR_NAS_PATH"
+stg_backend_nas_ip    = "YOUR_STG_NAS_IP"
+stg_backend_nas_path  = "/YOUR_NAS_PATH"
+stg_frontend_nas_ip   = "YOUR_STG_NAS_IP"
+stg_frontend_nas_path = "/YOUR_NAS_PATH"
+prod_backend_nas_ip    = "YOUR_PROD_NAS_IP"
+prod_backend_nas_path  = "/YOUR_NAS_PATH"
+prod_frontend_nas_ip   = "YOUR_PROD_NAS_IP"
+prod_frontend_nas_path = "/YOUR_NAS_PATH"
+
+
+# ════════════════════════════════════════════════════════
+# 11. 애플리케이션 도메인 및 API URL
+#
+#   *_lb_ip   : Service(LoadBalancer) 타입 GitOps에서 사용하는 LB External IP
+#   *_lb_name : LoadBalancer 이름 (MetalLB poolName 등)
+# ════════════════════════════════════════════════════════
+dev_backend_domain_name   = "YOUR_DEV_BACKEND_IP.nip.io"
+dev_frontend_domain_name  = "YOUR_DEV_FRONTEND_IP.nip.io"
+stg_backend_domain_name   = "YOUR_STG_BACKEND_IP.nip.io"
+stg_frontend_domain_name  = "YOUR_STG_FRONTEND_IP.nip.io"
+prod_backend_domain_name  = "YOUR_PROD_BACKEND_IP.nip.io"
+prod_frontend_domain_name = "YOUR_PROD_FRONTEND_IP.nip.io"
+dev_backend_api_url  = "http://sample-backend.YOUR_DEV_BACKEND_IP.nip.io"
+prod_backend_api_url = "http://sample-backend.YOUR_PROD_BACKEND_IP.nip.io"
+dev_lb_ip    = ""
+dev_lb_name  = ""
+stg_lb_ip    = ""
+stg_lb_name  = ""
+prod_lb_ip   = ""
+prod_lb_name = ""
+
+
+# ════════════════════════════════════════════════════════
+# 12. VM SSH 배포 설정
+#
+#   vm_host : YAML 들여쓰기 형식 문자열 (예: "    - 10.0.0.1\n    - 10.0.0.2")
+# ════════════════════════════════════════════════════════
+vm_host            = "    - YOUR_VM_IP_1\n    - YOUR_VM_IP_2"
+vm_ssh_private_key = "-----BEGIN OPENSSH PRIVATE KEY-----\n-----END OPENSSH PRIVATE KEY-----"
+vm_ssh_public_key  = ""
+
+
+# ════════════════════════════════════════════════════════
+# 13. ND 클러스터 캐시 노드 (SSH 접속 정보)
+#
+#   pem 파일을 result/{project_name}/ 폴더에 복사 후 파일명 입력
+# ════════════════════════════════════════════════════════
+cicd_cache_node_ip       = "YOUR_CACHE_NODE_IP"
+cicd_cache_node_id       = "YOUR_CACHE_NODE_USERNAME"
+cicd_cache_node_pem_file = "YOUR_PEM_FILENAME.pem"
+cicd_cache_node_port     = 22
+
+
+# ════════════════════════════════════════════════════════
+# 14. SSL 와일드카드 인증서
+#
+#   개행 문자는 \n 으로 표기, 헤더/푸터 포함 전체 인증서 내용 입력
+# ════════════════════════════════════════════════════════
+wildcard_dev_ssl_crt  = "-----BEGIN CERTIFICATE-----\n-----END CERTIFICATE-----"
+wildcard_dev_ssl_key  = "-----BEGIN PRIVATE KEY-----\n-----END PRIVATE KEY-----"
+wildcard_prod_ssl_crt = "-----BEGIN CERTIFICATE-----\n-----END CERTIFICATE-----"
+wildcard_prod_ssl_key = "-----BEGIN PRIVATE KEY-----\n-----END PRIVATE KEY-----"

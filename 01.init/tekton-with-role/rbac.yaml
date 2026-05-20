@@ -1,0 +1,44 @@
+# 클러스터 scope의 rbac 정의
+# # 서비스어카운트별 rbac 설정
+# # cicd담당자는 주로 cicdmanager 계정으로 사전작업등을 진행
+# # tekton 파이프라인실행은 네임스페이스별 cicdbot 계정으로 처리됨
+# tekton-pipeline에서 oauth 적용시 ncr을 사용할 경우 image pull secret가 필요함
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: devopsadmin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: devopsadmin
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cicdmanager
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: cicdmanager
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cicdbot
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: admin
+subjects:
+- kind: ServiceAccount
+  name: cicdbot
+  namespace: default

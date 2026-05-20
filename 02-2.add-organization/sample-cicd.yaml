@@ -1,0 +1,283 @@
+# comm클러스터의 sample-cicd 네임스페이스에서 파이프라인실행시 필요한 자원셋트
+---
+# NAS 스토리지 pvc
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: cicdvol-shared-store-pvc
+  namespace: {{organization_name}}-cicd
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: cicd-store-sc
+  selector:
+    matchLabels:
+      namespace: {{organization_name}}-cicd
+---
+# Local 스토리지 pvc
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cicdvol-shared-local-pvc
+  namespace: {{organization_name}}-cicd
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: cicd-local-sc
+  selector:
+    matchLabels:
+      namespace: {{organization_name}}-cicd
+---
+# vm 대상 배포시 sshkeypair 인증정보
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cicdbot-sshkeypair-secret
+  namespace: {{organization_name}}-cicd
+stringData:
+  ssh-privatekey: |
+    {{vm_ssh_private_key|indent(4)}}
+  ssh-publickey: |
+    {{vm_ssh_public_key|indent(4)}}
+---
+# Git 인증정보
+kind: Secret
+apiVersion: v1
+metadata:
+  name: cicdbot-gitconfig-secret
+  namespace: {{organization_name}}-cicd
+type: Opaque
+stringData:
+  .gitconfig: |
+    [credential "{{gitea_host_url_internal}}"]
+      helper = store
+  .git-credentials: |
+    http://{{git_cicd_id}}:{{git_cicd_pw}}@{{gitea_host_internal}}
+---
+# 소나큐브 인증정보
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cicdbot-sonarqube-secret
+  namespace: {{organization_name}}-cicd
+# type: kubernetes.io/basic-auth
+stringData:
+  # cicdbot계정의 글로벌 토큰정보
+  login: {{sonar_token}}
+---
+# kaniko 이미지 빌드 작업용 도커 인증정보
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cicdbot-dockerconfig-secret
+  namespace: {{organization_name}}-cicd
+stringData:
+  config.json: |-
+    {
+        "auths": {
+            "{{image_registry}}": {
+                "username":"{{harbor_id}}",
+                "password":"{{harbor_pw}}",
+                "auth": "{{harbor_auth}}"
+            }
+        }
+    }
+---
+# 넥서스 인증정보 (maven, gradle, npm 글로벌 설정 포함)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cicdbot-nexus-secret
+  namespace: {{organization_name}}-cicd
+type: Opaque
+stringData:
+  .npmrc:  |-
+    cache=/workspace/npm-local-cache
+    registry={{nexus_host_url_internal}}/repository/npm-default-group
+    audit=false
+  settings.xml: |-
+    <?xml version="1.0" encoding="UTF-8"?>
+    <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+              xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+              xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 http://maven.apache.org/xsd/settings-1.0.0.xsd">
+      <servers>
+        <server>
+          <id>deployment</id>
+          <username>{{nexus_id}}</username>
+          <password>{{nexus_pw}}</password>
+        </server> 
+      </servers>
+      <mirrors>
+        <mirror>
+          <id>Nexus</id>
+          <name>Nexus Private Mirror</name>
+          <url>{{nexus_host_url_internal}}/repository/maven-default-group</url>
+          <mirrorOf>*</mirrorOf>
+        </mirror>
+      </mirrors>
+    </settings>
+  init.gradle: |-
+    gradle.settingsEvaluated { settings ->
+        settings.pluginManagement {
+            repositories {
+                maven {
+                    allowInsecureProtocol=true 
+                    url '{{nexus_host_url_internal}}/repository/maven-default-group'
+                }
+            }
+        }
+    }
+    gradle.projectsLoaded { gradle ->
+        gradle.rootProject {
+            tasks.whenTaskAdded { task ->
+                if (task.name == 'processAot' ||
+                    task.name == 'processTestAot' ||
+                    task.name == 'compileAotJava' ||
+                    task.name == 'compileAotTestJava' ||
+                    task.name == 'processAotResources' ||
+                    task.name == 'processAotTestResources' ||
+                    task.name == 'aotClasses' ||
+                    task.name == 'aotTestClasses') {
+                    task.enabled = false
+                }
+            }
+        }
+    }
+    allprojects {
+        repositories {
+            maven {
+                allowInsecureProtocol=true 
+                url '{{nexus_host_url_internal}}/repository/maven-default-group'
+            }
+        }
+        tasks.withType(Jar).matching { it.name == 'jar' }.configureEach {
+            enabled = false
+        }
+        tasks.withType(Copy).matching { it.name == 'processResources' }.configureEach {
+            duplicatesStrategy = org.gradle.api.file.DuplicatesStrategy.INCLUDE
+        }
+        tasks.withType(Test).matching { it.name == 'test' }.configureEach {
+            ignoreFailures = true
+            testLogging {
+                events 'PASSED', 'FAILED', 'SKIPPED'
+            }
+        }
+        afterEvaluate {
+            if (configurations.findByName('runtimeClasspath')) {
+                if (!tasks.findByName('copyDependencies')) {
+                    tasks.register('copyDependencies', Copy) {
+                        from configurations.runtimeClasspath
+                        into "$buildDir/dependencies"
+                    }
+                } else {
+                    tasks.named('copyDependencies', Copy).configure {
+                        from configurations.runtimeClasspath
+                        into "$buildDir/dependencies"
+                    }
+                }
+                tasks.matching { it.name == 'build' }.configureEach {
+                    dependsOn 'copyDependencies'
+                }
+            }
+        }
+    }
+  gradle.properties: |-
+    deploymentUsername={{nexus_id}}
+    deploymentPassword={{nexus_pw}}
+---
+# comm클러스터의 argocd 인증정보
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cicdbot-argocd-comm-secret
+  namespace: {{organization_name}}-cicd
+stringData:
+  ARGOCD_SERVER: {{argocd_host_url}}
+  ARGOCD_OPTS: --grpc-web --insecure --skip-test-tls
+  ARGOCD_USERNAME: {{argocd_id}}
+  ARGOCD_PASSWORD: {{argocd_pw}}
+---
+# comm클러스터의 kubeconfig 인증정보
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cicdbot-kubeconfig-secret
+  namespace: {{organization_name}}-cicd
+stringData:
+  kubeconfig: |
+    apiVersion: v1
+    clusters:
+    - cluster:
+        certificate-authority-data: {{nks_cert_auth_data}}
+        server: {{nks_master_server}}
+      name: "toast-comm"
+    contexts:
+    - context:
+        cluster: "toast-comm"
+        user: cicdbot
+      name: default
+    current-context: default
+    kind: Config
+    preferences: {}
+    users:
+    - name: cicdbot
+      user:
+        token: {{cicdbot_token}}
+---
+# cicd도구 ca인증서
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cicdssl-cacerts-secret
+  namespace: {{organization_name}}-cicd
+stringData:
+  ca-certificates.crt: |
+    {{harbor_ca|indent(4)}}
+
+---
+# 이미지서명 자동화용 도커 인증정보 (requirement: tekton-chains)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: regcred
+  namespace: {{organization_name}}-cicd
+type: kubernetes.io/dockerconfigjson
+stringData:
+  .dockerconfigjson: |-
+    {
+        "auths": {
+            "{{image_registry}}": {
+                "username":"{{harbor_id}}",
+                "password":"{{harbor_pw}}",
+                "auth": "{{harbor_auth}}"
+            }
+        }
+    }
+---
+# 파이프라인실행을위한 서비스계정
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cicdbot
+  namespace: {{organization_name}}-cicd
+secrets:
+- name: regcred
+imagePullSecrets:
+- name: regcred
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: default
+  namespace: {{organization_name}}-cicd
+secrets:
+- name: regcred
+imagePullSecrets:
+- name: regcred

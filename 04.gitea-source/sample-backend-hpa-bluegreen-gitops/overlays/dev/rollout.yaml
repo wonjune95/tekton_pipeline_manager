@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: {{application_name}}-ro
+spec:
+  replicas: 4                              # 롤 아웃에서 레플리카스 조정
+#  revisionHistoryLimit: 2
+  strategy:
+    blueGreen:
+      activeService: {{application_name}}-blue-svc
+      previewService: {{application_name}}-green-svc
+      autoPromotionEnabled: true           # 자동 승격(수동 승격은 false 검증 후 promote)
+      autoPromotionSeconds: 60             # 자동 승격 대기시간(원하면 사용)
+      # scaleDownDelaySeconds: 30          # 구버전 즉시 삭제를 잠시 지연
+  workloadRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{application_name}}-dp

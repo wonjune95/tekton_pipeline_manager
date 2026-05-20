@@ -1,0 +1,46 @@
+# 클러스터 운용에 필요한 서비스어카운트와 시크릿을 default 네임스페이스에 등록
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: devopsadmin
+  namespace: default
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: devopsadmin
+  namespace: default
+  annotations:
+    kubernetes.io/service-account.name: devopsadmin
+type: kubernetes.io/service-account-token
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cicdmanager
+  namespace: default
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cicdmanager
+  namespace: default
+  annotations:
+    kubernetes.io/service-account.name: cicdmanager
+type: kubernetes.io/service-account-token
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cicdbot
+  namespace: default
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cicdbot
+  namespace: default
+  annotations:
+    kubernetes.io/service-account.name: cicdbot
+type: kubernetes.io/service-account-token

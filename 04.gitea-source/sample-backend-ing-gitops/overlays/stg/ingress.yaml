@@ -1,0 +1,21 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    nginx.ingress.kubernetes.io/affinity: cookie
+    nginx.ingress.kubernetes.io/session-cookie-hash: sha256
+    nginx.ingress.kubernetes.io/session-cookie-name: route
+  name: {{application_name}}-ing
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: {{application_name}}.{{stg_backend_domain_name}}
+    http:
+      paths:
+      - backend:
+          service:
+            name: {{application_name}}-svc
+            port:
+              name: http
+        path: /
+        pathType: Prefix

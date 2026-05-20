@@ -1,0 +1,68 @@
+# argocd 관련 설정 커스텀
+---
+# argocd 계정 설정
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/name: argocd-cm
+    app.kubernetes.io/part-of: argocd
+  name: argocd-cm
+  namespace: devops-tools
+data:
+  accounts.devopsadmin: apiKey, login
+  accounts.devopsadmin.enabled: "true"
+  accounts.cicdmanager: apiKey, login
+  accounts.cicdmanager.enabled: "true"
+  accounts.cicdbot: apiKey, login
+  accounts.cicdbot.enabled: "true"
+
+  # Gitea OIDC 적용
+  url: {{argocd_domain}}
+  oidc.config: |
+    name: Gitea
+    issuer: {{gitea_domain}}
+    clientID: {{oauth_client_id}}
+    clientSecret: {{oauth_client_secret}}
+    requestedScopes: ["openid","profile","email","groups"]
+    requestedIDTokenClaims: {"groups": {"essential": true}}
+    enableUserInfoGroups: true
+
+    # 그룹을 토큰/유저정보 어디서든 확보 (권장)
+    requestedIDTokenClaims: {"groups": {"essential": true}}
+    enableUserInfoGroups: true
+    userInfoPath: /login/oauth/userinfo
+    userInfoCacheExpiration: "5m"
+
+## 비밀번호 생성 및 변경 작업은 argocd 커맨드 명령어로 진행
+# argocd login argocd-comm.yourdomain.com --grpc-web
+# argocd context argocd-comm.yourdomain.com
+# argocd account update-password --account devopsadmin
+# argocd account update-password --account cicdmanager
+# argocd account update-password --account cicdbot
+---
+# argocd 권한 설정
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/name: argocd-rbac-cm
+    app.kubernetes.io/part-of: argocd
+  name: argocd-rbac-cm
+  namespace: devops-tools
+data:
+  policy.default: role:readonly
+  policy.csv: |
+    g, devopsadmin, role:admin
+    g, cicdmanager, role:admin
+    g, cicdbot, role:admin
+
+    # Gitea 그룹별 권한
+    g, oauth_organization:admins, role:admin
+    g, oauth_organization:viewers, role:readonly
+
+    # 네임스페이스별 권한을 주고 싶다면, 아래와 같이 설정한다.
+    g, oauth_organization:admins, role:sample-dev-admin
+    p, role:sample-dev-admin, applications, get, sample-dev/*, allow    # 상세 조회 허용
+    p, role:sample-dev-admin, applications, list, sample-dev/*, allow   # 목록 보기 허용
+    p, role:sample-dev-admin, applications, watch, sample-dev/*, allow  # 실시간 감시 허용

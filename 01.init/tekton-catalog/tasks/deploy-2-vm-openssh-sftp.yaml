@@ -1,0 +1,93 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  annotations:
+    tekton.dev/categories: CLI
+    tekton.dev/displayName: openssh-sftp
+    tekton.dev/pipelines.minVersion: 0.12.1
+    tekton.dev/platforms: linux/amd64
+    tekton.dev/tags: cli, openssh-client, ssh, sftp
+  labels:
+    app.kubernetes.io/version: "0.1"
+    hub.tekton.dev/catalog: tekton
+  name: openssh-sftp
+  namespace: tekton-catalog
+spec:
+  description: |-
+    This task performs the following actions:
+    1. Connects to a remote host via SSH and executes a pre-SFTP command.
+    2. Uploads a file to the remote host via SFTP.
+    3. Executes a post-SFTP command on the remote host via SSH.
+    It installs the OpenSSH client, reads the SSH private key from a Kubernetes Secret,
+    and uses the provided SSH user, host, and port parameters.
+  params:
+  - name: CONTEXT_DIR
+    type: string
+    default: ""
+  - name: IMAGE
+    type: string
+    default: harbor.yourdomain.com/library/ubuntu-openssh-client:jammy
+  - name: SSH_HOST
+    type: string
+    description: The SSH host to connect to
+  - name: SSH_PORT
+    type: string
+    description: The SSH port to connect to
+    default: "22"
+  - name: SSH_USER
+    type: string
+    description: The SSH user to use for the connection
+  - name: PRE_SFTP_SSH_COMMAND
+    type: string
+    description: The command to execute on the remote host before SFTP
+  - name: POST_SFTP_SSH_COMMAND
+    type: string
+    description: The command to execute on the remote host after SFTP
+  - name: SOURCE_FILE
+    type: string
+    default: "*.war"
+    description: The source file to upload
+  - name: TARGET_PATH
+    type: string
+    default: /app/tomcat/webapps
+    description: The target path on the SFTP server
+  steps:
+  - computeResources: {}
+    env:
+    - name: TZ
+      value: Asia/Seoul
+    image: $(params.IMAGE)
+    name: pre-sftp-ssh-command
+    script: |
+      #!/bin/bash
+      cat $(workspaces.credentials.path)/ssh-privatekey > ./privatekey && chmod 600 ./privatekey
+      ssh -o StrictHostKeyChecking=no -i ./privatekey -p "$(params.SSH_PORT)" "$(params.SSH_USER)@$(params.SSH_HOST)" "$(params.PRE_SFTP_SSH_COMMAND)"
+    workingDir: $(workspaces.source.path)/$(params.CONTEXT_DIR)
+  - computeResources: {}
+    env:
+    - name: TZ
+      value: Asia/Seoul
+    image: $(params.IMAGE)
+    name: upload-file-via-sftp
+    script: |
+      #!/bin/bash
+      cat $(workspaces.credentials.path)/ssh-privatekey > ./privatekey && chmod 600 ./privatekey
+      sftp -o StrictHostKeyChecking=no -i ./privatekey -P "$(params.SSH_PORT)" "$(params.SSH_USER)@$(params.SSH_HOST)" <<EOF
+      put $(params.SOURCE_FILE) $(params.TARGET_PATH)
+      bye
+      EOF
+    workingDir: $(workspaces.source.path)/$(params.CONTEXT_DIR)
+  - computeResources: {}
+    env:
+    - name: TZ
+      value: Asia/Seoul
+    image: $(params.IMAGE)
+    name: post-sftp-ssh-command
+    script: |
+      #!/bin/bash
+      cat $(workspaces.credentials.path)/ssh-privatekey > ./privatekey && chmod 600 ./privatekey
+      ssh -o StrictHostKeyChecking=no -i ./privatekey -p "$(params.SSH_PORT)" "$(params.SSH_USER)@$(params.SSH_HOST)" "$(params.POST_SFTP_SSH_COMMAND)"
+    workingDir: $(workspaces.source.path)/$(params.CONTEXT_DIR)
+  workspaces:
+  - name: source
+  - name: credentials

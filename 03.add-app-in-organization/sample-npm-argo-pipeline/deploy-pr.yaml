@@ -1,0 +1,75 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  labels:
+    app: {{application_name}}
+    env: {{env_menu}}
+    type: deploy
+  name: {{application_name}}-{{env_menu}}-deploy-pr
+  namespace: {{organization_name}}-cicd
+spec:
+  params:
+    - name: git-host-url
+      value: {{gitea_domain}}
+    - name: code-repo-org
+      value: {{organization_name}}
+    - name: code-repo-name
+      value: {{application_name}}
+    - name: code-repo-url
+      value: >-
+        $(params.git-host-url)/$(params.code-repo-org)/$(params.code-repo-name).git
+    - name: target-cluster
+      value: comm
+    - name: deploy-cluster
+      value: {{deploy_cluster}}
+    - name: app-env
+      value: {{env_menu}}
+    - name: app-namespace
+      value: {{organization_name}}-{{env_menu}}
+    - name: app-name
+      value: $(params.code-repo-name)
+    - name: skip-app-sync
+      value: 'false'
+    - name: skip-zap-scan
+      value: 'false'
+    - name: zap-scan-url
+      value: http://zap-scan-url
+    - name: cicd-repo-org
+      value: $(params.code-repo-org)-cicd
+    - name: cicd-repo-name
+      value: $(params.code-repo-name)-$(params.app-env)
+    - name: cicd-repo-url
+      value: >-
+        $(params.git-host-url)/$(params.cicd-repo-org)/$(params.cicd-repo-name).git
+    - name: cicd-revision
+      value: main
+    - name: argocd-secret
+      value: cicdbot-argocd-$(params.target-cluster)-secret
+  pipelineRef:
+    params:
+      - name: kind
+        value: pipeline
+      - name: name
+        value: deploy-argocd-app-setup-syncwait
+      - name: namespace
+        value: tekton-catalog
+    resolver: cluster
+  status: PipelineRunPending
+  taskRunTemplate:
+    serviceAccountName: cicdbot
+  timeouts:
+    pipeline: 1h0m0s
+  workspaces:
+    - name: shared-data
+      persistentVolumeClaim:
+        claimName: cicdvol-shared-local-pvc
+      subPath: $(params.code-repo-name)
+    - name: gitconfig
+      secret:
+        secretName: cicdbot-gitconfig-secret
+    - name: ssl-ca-directory
+      secret:
+        secretName: cicdssl-cacerts-secret
+    - name: kubeconfig
+      secret:
+        secretName: cicdbot-kubeconfig-secret

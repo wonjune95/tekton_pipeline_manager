@@ -1,0 +1,598 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: build-npm-nodejs-nginx-image
+  namespace: tekton-catalog
+spec:
+  description: |
+    This Pipeline for npm build.
+  params:
+  - name: git-host-url
+    default: {{gitea_domain}}
+    type: string
+  - name: code-repo-org
+    default: sample
+    type: string
+  - name: code-repo-name
+    default: sample-frontend
+    type: string
+  - name: code-repo-url
+    description: Code Repository URL to clone from.
+    default:  $(params.git-host-url)/$(params.code-repo-org)/$(params.code-repo-name).git
+    type: string
+  - name: code-revision
+    description: Revision to checkout. (branch, tag, sha, ref, etc...)
+    default: develop
+    type: string
+  - name: node-version
+    default: "12.18.0"
+    type: string
+  - name: nginx-version
+    default: "1.26"
+    type: string
+  - name: build-script
+    default: |
+      yarn install
+      yarn build -- --mode dev
+    type: string
+  - name: artifact-source
+    default: dist
+    type: string
+  - name: artifact-target
+    default: /usr/share/nginx/html
+    type: string
+  - name: skip-code-analysis
+    default: "false"
+    type: string
+  - name: skip-write-dockerfile
+    default: "false"
+    type: string
+  - name: skip-image-scan
+    default: "false"
+    type: string
+  - name: skip-deploy-trigger
+    default: "false"
+    type: string
+  - name: app-env
+    default: dev
+    type: string
+  - name: app-namespace
+    default: sample-dev
+    type: string
+  - name: app-name
+    default: $(params.code-repo-name)
+    type: string
+  - name: app-image
+    default: {{image_registry}}/$(params.app-namespace)/$(params.code-repo-org)/$(params.app-name)
+    type: string
+  - name: path-to-dockerfile
+    default: "Dockerfile"
+    type: string
+  - name: gitops-repo-org
+    default: $(params.code-repo-org)-cicd
+    type: string
+  - name: gitops-repo-name
+    default: $(params.code-repo-name)-gitops
+    type: string
+  - name: gitops-repo-url
+    default: $(params.git-host-url)/$(params.gitops-repo-org)/$(params.gitops-repo-name).git
+    type: string
+  - name: cicd-repo-org
+    default: $(params.code-repo-org)-cicd
+    type: string
+  - name: cicd-repo-name
+    default: $(params.code-repo-name)-$(params.app-env)
+    type: string
+  - name: cicd-repo-url
+    default: $(params.git-host-url)/$(params.cicd-repo-org)/$(params.cicd-repo-name).git
+    type: string
+  - name: cicd-auto-tag
+    default: $(tasks.code-fetch.results.cicd-auto-tag-prefix)$(context.pipelineRun.name)
+    type: string
+  - name: deploy-el-name
+    default: $(params.code-repo-name)-$(params.app-env)-deploy-el
+    type: string
+  - name: working-pr-dir
+    default: $(context.pipelineRun.name)
+    type: string
+  tasks:
+  - displayName: Code Fetch
+    name: code-fetch
+    params:
+    - name: gitInitImage
+      value: {{image_registry}}/nnd/tekton-cicd/git-init:v0.40.2-tz
+    - name: crtFileName
+      value: ca-certificates.crt
+    - name: sslVerify
+      value: "false"
+    - name: deleteExisting
+      value: "true"
+    - name: subdirectory
+      value: $(params.working-pr-dir)/$(params.code-repo-name)
+    - name: url
+      value: $(params.code-repo-url)
+    - name: revision
+      value: $(params.code-revision)
+    taskRef:
+      kind: Task
+      params:
+      - name: kind
+        value: task
+      - name: name
+        value: git-clone
+      - name: namespace
+        value: tekton-catalog
+      resolver: cluster
+    workspaces:
+    - name: output
+      workspace: shared-data
+    - name: basic-auth
+      workspace: gitconfig
+    - name: ssl-ca-directory
+      workspace: ssl-ca-directory
+  - displayName: Code Build
+    name: code-build
+    params:
+    - name: BASH_IMAGE
+      value: {{image_registry}}/nnd/tekton-cicd/bash:5.2.21
+    - name: NODE_IMAGE
+      value: {{image_registry}}/nnd/tekton-cicd/node:$(params.node-version)
+    - name: CONTEXT_DIR
+      value: $(params.working-pr-dir)/$(params.code-repo-name)
+    - name: NPM_COMMAND
+      value: |
+        $(params.build-script)
+    runAfter:
+    - code-fetch
+    taskRef:
+      kind: Task
+      params:
+      - name: kind
+        value: task
+      - name: name
+        value: npm
+      - name: namespace
+        value: tekton-catalog
+      resolver: cluster
+    workspaces:
+    - name: source
+      workspace: shared-data
+    - name: ssl-ca-directory
+      workspace: ssl-ca-directory
+    - name: npmrc-settings
+      workspace: npmrc-settings
+    - name: npm-local-cache
+      workspace: npm-local-cache
+    - name: node_modules
+      workspace: node_modules
+  - displayName: Code Analysis
+    name: code-analysis
+    when:
+    # - input: $(params.app-env)
+    #   operator: in
+    #   values:
+    #   - dev
+    - input: $(params.skip-code-analysis)
+      operator: in
+      values:
+      - "false"
+    params:
+    - name: CONTEXT_DIR
+      value: $(params.working-pr-dir)/$(params.code-repo-name)
+    - name: SONAR_HOST_URL
+      value: {{sonar_host_url_internal}}
+    - name: SONAR_PROJECT_KEY
+      value: $(params.code-repo-name)
+    - name: PROJECT_VERSION
+      value: $(tasks.code-fetch.results.commit)
+    - name: SOURCE_TO_SCAN
+      value: src
+    - name: SONAR_SCANNER_IMAGE
+      value: {{image_registry}}/nnd/tekton-cicd/sonar-scanner-cli:5.0.1
+    - name: SONAR_LOGIN_KEY
+      value: login
+    - name: SONAR_PASSWORD_KEY
+      value: password
+    - name: SONAR_LINKS_CI
+      value: {{tekton_domain}}/#/namespaces/$(context.pipelineRun.namespace)/pipelineruns/$(context.pipelineRun.name)?pipelineTask=code-analysis&step=sonar-scan
+    - name: SONAR_LINKS_SCM
+      value: $(params.code-repo-url)
+    - name: SONAR_LANGUAGE
+      value: js
+    - name: SONAR_INCLUSIONS
+      value: src/**/*.js
+    - name: SONAR_EXCLUSIONS
+      value: node_modules/**,dist/**
+    - name: SONAR_PROP_IMAGE
+      value: {{image_registry}}/nnd/tekton-cicd/bash:5.2.21
+    - name: SONAR_BRANCH_NAME
+      value: $(params.code-revision)
+    runAfter:
+    - code-build
+    taskRef:
+      kind: Task
+      params:
+      - name: kind
+        value: task
+      - name: name
+        value: sonarqube-scanner
+      - name: namespace
+        value: tekton-catalog
+      resolver: cluster
+    workspaces:
+    - name: source
+      workspace: shared-data
+    - name: ssl-ca-directory
+      workspace: ssl-ca-directory
+    - name: sonar-credentials
+      workspace: sonar-credentials
+  - displayName: Write Dockerfile
+    name: write-dockerfile
+    when:
+    - input: $(params.skip-write-dockerfile)
+      operator: in
+      values:
+      - "false"
+    params:
+    - name: image
+      value: {{image_registry}}/nnd/tekton-cicd/bash:5.2.21
+    - name: path
+      value: $(params.working-pr-dir)/$(params.code-repo-name)/$(params.path-to-dockerfile)
+    - name: contents
+      value: |
+        FROM {{image_registry}}/nnd/tekton-cicd/nginx:$(params.nginx-version)
+        LABEL APP_IMAGE=$(params.app-image)
+        ADD curl -o authbind_2.1.3_amd64.deb {{nexus_raw_url}}debian/pool/main/a/authbind/authbind_2.1.3_amd64.deb 
+        ENV APP_HOME=/usr/share/nginx/html \
+            LANGUAGE= \
+            LANG=C.UTF-8 \
+            LC_ALL=C.UTF-8 \
+            TZ=Asia/Seoul
+        COPY $(params.artifact-source) $(params.artifact-target)
+        RUN ln -snf /usr/share/zoneinfo/${TZ} /etc/localtime && echo ${TZ} > /etc/timezone && \
+            dpkg -i authbind*.deb && rm -rf authbind* && \
+            sed -i 's/^user /# user /g' /etc/nginx/nginx.conf && \
+            sed -i 's/\/var\/run\/nginx.pid/\/tmp\/nginx.pid/g' /etc/nginx/nginx.conf && \
+            chown -R nginx:nginx /etc/nginx && \
+            chown -R nginx:nginx /var/cache/nginx && \
+            chown -R nginx:nginx /var/log/nginx && \
+            chown -R nginx:nginx /tmp && \
+            chown -R nginx:nginx /usr/share/nginx/html && \
+            touch /etc/authbind/byport/80 && \
+            chown nginx /etc/authbind/byport/80 && \
+            chmod 500 /etc/authbind/byport/80
+        USER nginx
+        WORKDIR ${APP_HOME}
+        CMD ["authbind", "--deep", "nginx", "-g", "daemon off;"]
+    runAfter:
+    - code-analysis
+    taskRef:
+      kind: Task
+      params:
+      - name: kind
+        value: task
+      - name: name
+        value: write-file
+      - name: namespace
+        value: tekton-catalog
+      resolver: cluster
+    workspaces:
+    - name: output
+      workspace: shared-data
+  - displayName: Image Build
+    name: image-build
+    params:
+    - name: EXTRA_ARGS
+      value:
+      - --tar-path=$(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-repo-name)/image.tar
+      - --destination=$(params.app-image):latest
+    - name: IMAGE
+      value: $(params.app-image):$(params.cicd-auto-tag)
+    - name: DOCKERFILE
+      value: $(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-repo-name)/$(params.path-to-dockerfile)
+    - name: CONTEXT
+      value: $(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-repo-name)
+    - name: BUILDER_IMAGE
+      value: {{image_registry}}/nnd/tekton-cicd/kaniko:v1.23.2
+    - name: BASH_IMAGE
+      value: {{image_registry}}/nnd/tekton-cicd/bash:5.2.21
+    runAfter:
+    - write-dockerfile
+    taskRef:
+      kind: Task
+      params:
+      - name: kind
+        value: task
+      - name: name
+        value: kaniko
+      - name: namespace
+        value: tekton-catalog
+      resolver: cluster
+    workspaces:
+    - name: source
+      workspace: shared-data
+    - name: ssl-ca-directory
+      workspace: ssl-ca-directory
+    - name: dockerconfig
+      workspace: dockerconfig
+  - displayName: Image Scan
+    name: image-scan
+    when:
+    # - input: $(params.app-env)
+    #   operator: in
+    #   values:
+    #   - dev
+    - input: $(params.skip-image-scan)
+      operator: in
+      values:
+      - "false"
+    params:
+    - name: ARGS
+      value:
+      - image
+      - --exit-code 0
+      - --scanners vuln
+      - --ignore-unfixed
+      - --input $(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-repo-name)/image.tar
+    - name: TRIVY_IMAGE
+      value: {{image_registry}}/nnd/tekton-cicd/trivy:0.54.2
+    # - name: IMAGE
+    #   value: $(params.app-image):$(params.cicd-auto-tag)
+    - name: AIR_GAPPED_ENABLED
+      value: "true"
+    runAfter:
+    - image-build
+    taskRef:
+      kind: Task
+      params:
+      - name: kind
+        value: task
+      - name: name
+        value: trivy-scanner
+      - name: namespace
+        value: tekton-catalog
+      resolver: cluster
+    workspaces:
+    - name: source
+      workspace: shared-data
+    - name: ssl-ca-directory
+      workspace: ssl-ca-directory
+    - name: trivy-local-cache
+      workspace: trivy-local-cache
+  - displayName: GitOps Repo Fetch
+    name: gitops-fetch
+    params:
+    - name: gitInitImage
+      value: {{image_registry}}/nnd/tekton-cicd/git-init:v0.40.2-tz
+    - name: crtFileName
+      value: ca-certificates.crt
+    - name: sslVerify
+      value: "false"
+    - name: deleteExisting
+      value: "true"
+    - name: subdirectory
+      value: $(params.working-pr-dir)/$(params.gitops-repo-name)
+    - name: url
+      value: $(params.gitops-repo-url)
+    - name: revision
+      value: main
+    runAfter:
+    - image-scan
+    taskRef:
+      kind: Task
+      params:
+      - name: kind
+        value: task
+      - name: name
+        value: git-clone
+      - name: namespace
+        value: tekton-catalog
+      resolver: cluster
+    workspaces:
+    - name: output
+      workspace: shared-data
+    - name: basic-auth
+      workspace: gitconfig
+    - name: ssl-ca-directory
+      workspace: ssl-ca-directory
+  - displayName: Kustomize Build
+    name: kustomize-build
+    params:
+    - name: CONTEXT_DIR
+      value: $(params.working-pr-dir)/$(params.gitops-repo-name)/overlays/$(params.app-env)
+    - name: IMAGE
+      value: {{image_registry}}/nnd/tekton-cicd/kustomize:v5.0.1
+    - name: SCRIPT
+      value: |
+        kustomize edit set image $(params.app-name)=$(params.app-image):$(params.cicd-auto-tag)
+        cat kustomization.yaml
+        kustomize build > $(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-repo-name)/kubernetes.yaml
+    runAfter:
+    - gitops-fetch
+    taskRef:
+      kind: Task
+      params:
+      - name: kind
+        value: task
+      - name: name
+        value: kustomize-cli
+      - name: namespace
+        value: tekton-catalog
+      resolver: cluster
+    workspaces:
+    - name: source
+      workspace: shared-data
+  - displayName: CICD Repo Fetch
+    name: cicd-fetch
+    params:
+    - name: gitInitImage
+      value: {{image_registry}}/nnd/tekton-cicd/git-init:v0.40.2-tz
+    - name: crtFileName
+      value: ca-certificates.crt
+    - name: sslVerify
+      value: "false"
+    - name: deleteExisting
+      value: "true"
+    - name: subdirectory
+      value: $(params.working-pr-dir)/$(params.cicd-repo-name)
+    - name: url
+      value: $(params.cicd-repo-url)
+    - name: revision
+      value: main
+    runAfter:
+    - kustomize-build
+    taskRef:
+      kind: Task
+      params:
+      - name: kind
+        value: task
+      - name: name
+        value: git-clone
+      - name: namespace
+        value: tekton-catalog
+      resolver: cluster
+    workspaces:
+    - name: output
+      workspace: shared-data
+    - name: basic-auth
+      workspace: gitconfig
+    - name: ssl-ca-directory
+      workspace: ssl-ca-directory
+  - displayName: Copy to CICD Repo & Push
+    name: cicd-push
+    params:
+    - name: CONTEXT_DIR
+      value: $(params.working-pr-dir)/$(params.cicd-repo-name)
+    - name: BASE_IMAGE
+      value: {{image_registry}}/nnd/tekton-cicd/chainguard-git:2.43.0
+    - name: CRT_FILENAME
+      value: ca-certificates.crt
+    - name: USER_HOME
+      value: /home/git
+    - name: GIT_USER_NAME
+      value: cicdbot
+    - name: GIT_USER_EMAIL
+      value: cicdbot@example.com
+    - name: GIT_SCRIPT
+      value: |
+        git checkout main
+        git pull
+
+        find . -mindepth 1 -maxdepth 1 -not -name ".*" | xargs -r rm -rf
+
+        BUILD_TAG=$(params.cicd-auto-tag)
+
+        rm -rf $(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-repo-name)/image.tar
+        cp $(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-repo-name)/$(params.path-to-dockerfile) .
+        cp $(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-repo-name)/kubernetes.yaml .
+
+        echo $BUILD_TAG > README.md
+        echo "artifactRepository=$(params.app-image):$BUILD_TAG" > ARTIFACT.txt
+
+        git add .
+        git commit -m $BUILD_TAG
+        git tag $BUILD_TAG $(git rev-parse --short HEAD)
+        git push origin main $BUILD_TAG
+    runAfter:
+    - cicd-fetch
+    taskRef:
+      kind: Task
+      params:
+      - name: kind
+        value: task
+      - name: name
+        value: git-cli
+      - name: namespace
+        value: tekton-catalog
+      resolver: cluster
+    workspaces:
+    - name: source
+      workspace: shared-data
+    - name: basic-auth
+      workspace: gitconfig
+    - name: ssl-ca-directory
+      workspace: ssl-ca-directory
+  finally:
+  - displayName: Deploy Trigger
+    name: deploy-trigger
+    when:
+    - input: $(tasks.status)
+      operator: in
+      values:
+      - Completed
+      - Succeeded
+    - input: $(params.skip-deploy-trigger)
+      operator: in
+      values:
+      - "false"
+    params:
+    - name: curl-image
+      value: {{image_registry}}/nnd/tekton-cicd/curl:8.5.0
+    - name: url
+      value: el-$(params.deploy-el-name).$(context.pipelineRun.namespace).svc:8080
+    - name: options
+      value:
+      - -X
+      - POST
+      - --data
+      - "{\"git-host-url\": \"$(params.git-host-url)\", \"code-repo-org\": \"$(params.code-repo-org)\", \"code-repo-name\": \"$(params.code-repo-name)\", \"cicd-revision\": \"$(params.cicd-auto-tag)\"}"
+    taskRef:
+      kind: Task
+      params:
+      - name: kind
+        value: task
+      - name: name
+        value: curl
+      - name: namespace
+        value: tekton-catalog
+      resolver: cluster
+  - displayName: Cleanup Policy
+    name: cleanup-policy
+    params:
+    - name: SCRIPT
+      value: |
+        find $(workspaces.source.path) -mindepth 1 -maxdepth 1 -type d -name "$(params.working-pr-dir)" | xargs -r rm -rf
+
+        tkn pipelinerun delete --force --keep 0 --all $1 -n $(context.pipelineRun.namespace)
+        tkn pipelinerun list $1 -n $(context.pipelineRun.namespace)
+    - name: ARGS
+      value:
+      - --label app=$(params.app-name),env=$(params.app-env),type=build,tekton.dev/pipeline!=$(params.app-name)-$(params.app-env)-build-pr
+    taskSpec:
+      metadata: {}
+      params:
+      - name: SCRIPT
+        type: string
+      - name: ARGS
+        type: array
+      spec: null
+      steps:
+      - args:
+        - $(params.ARGS)
+        computeResources: {}
+        image: {{image_registry}}/nnd/tekton-cicd/tkn:v0.12.0
+        name: tkn
+        script: |
+          if [ "$(workspaces.kubeconfig.bound)" = "true" ] && [ -e $(workspaces.kubeconfig.path)/kubeconfig ]; then
+            export KUBECONFIG="$(workspaces.kubeconfig.path)"/kubeconfig
+          fi
+          eval "$(params.SCRIPT)"
+      workspaces:
+      - name: source
+      - name: kubeconfig
+    workspaces:
+    - name: source
+      workspace: shared-data
+    - name: kubeconfig
+      workspace: kubeconfig
+  workspaces:
+  - name: shared-data
+  - name: gitconfig
+  - name: ssl-ca-directory
+  - name: npmrc-settings
+  - name: npm-local-cache
+  - name: node_modules
+  - name: sonar-credentials
+  - name: dockerconfig
+  - name: trivy-local-cache
+  - name: kubeconfig

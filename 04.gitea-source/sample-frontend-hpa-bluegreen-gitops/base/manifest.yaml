@@ -1,0 +1,150 @@
+# apiVersion: v1
+# kind: PersistentVolumeClaim
+# metadata:
+#   name: {{application_name}}-data-pvc
+# spec:
+#   accessModes:
+#   - ReadWriteMany
+#   resources:
+#     requests:
+#       storage: 1Gi
+#   storageClassName: {{organization_name}}-sc
+# ---
+# apiVersion: v1
+# kind: PersistentVolumeClaim
+# metadata:
+#   name: {{application_name}}-log-pvc
+# spec:
+#   accessModes:
+#   - ReadWriteMany
+#   resources:
+#     requests:
+#       storage: 5Gi
+#   storageClassName: {{organization_name}}-sc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{application_name}}-dp
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: {{application_name}}
+  revisionHistoryLimit: 2
+  template:
+    metadata:
+      labels:
+        app: {{application_name}}
+    spec:
+      imagePullSecrets:
+      - name: regcred
+      securityContext:
+        fsGroup: 1001
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+      - name: {{application_name}}-con
+        image: {{application_name}}
+        imagePullPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          privileged: false
+          readOnlyRootFilesystem: true
+          runAsGroup: 1001
+          runAsNonRoot: true
+          runAsUser: 1001
+          seccompProfile:
+            type: RuntimeDefault
+        env:
+        - name: NODE_NAME
+          valueFrom: {fieldRef: {fieldPath: spec.nodeName}}
+        - name: NODE_IP
+          valueFrom: {fieldRef: {fieldPath: status.hostIP}}
+        - name: NAMESPACE
+          valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+        - name: POD_NAME
+          valueFrom: {fieldRef: {fieldPath: metadata.name}}
+        - name: POD_IP
+          valueFrom: {fieldRef: {fieldPath: status.podIP}}
+        - name: JAVA_OPTS_APPEND
+          value: "-Djava.io.tmpdir=/app/tmp -Dlogpath=/app/logs -Dhostname=$(POD_NAME)"
+        lifecycle:
+          preStop:
+            exec:
+              command: ["sh", "-c", "sleep 10"]
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 3
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 15
+          periodSeconds: 5
+          timeoutSeconds: 3
+        resources:
+          limits:
+            cpu: 2000m
+            ephemeral-storage: 10Gi
+            memory: 4096Mi
+          requests:
+            cpu: 1000m
+            ephemeral-storage: 2Gi
+            memory: 2048Mi
+        volumeMounts:
+        - mountPath: /app/data
+          name: data
+        - mountPath: /app/logs
+          name: log
+        - mountPath: /app/tmp
+          name: tmp
+      volumes:
+      - name: data
+        emptyDir: {}
+        #persistentVolumeClaim:
+        #  claimName: {{application_name}}-data-pvc
+      - name: log
+        emptyDir: {}
+        #persistentVolumeClaim:
+        #  claimName: {{application_name}}-log-pvc
+      - name: tmp
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{application_name}}-blue-svc
+spec:
+  selector:
+    app: {{application_name}}
+  ports:
+  - name: http
+    port: 8080
+    protocol: TCP
+    targetPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{application_name}}-green-svc
+spec:
+  selector:
+    app: {{application_name}}
+  ports:
+  - name: http
+    port: 8080
+    protocol: TCP
+    targetPort: 8080

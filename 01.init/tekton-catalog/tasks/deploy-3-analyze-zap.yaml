@@ -1,0 +1,30 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: zap-scan
+  namespace: tekton-catalog
+spec:
+  description: |
+    Run OWASP ZAP scan using a Docker container.
+  params:
+  - default: docker.io/zaproxy/zap-stable:2.16.0
+    name: IMAGE
+    type: string
+  - default: |
+      zap-baseline.py
+    description: The zap scan script to run.
+    name: SCRIPT
+    type: string
+  steps:
+  - computeResources: {}
+    image: $(params.IMAGE)
+    name: zap-scan
+    script: |
+      #!/bin/sh
+      $(params.SCRIPT)
+    volumeMounts:
+    - name: zap-wrk
+      mountPath: /zap/wrk
+  volumes:
+  - name: zap-wrk
+    emptyDir: {}

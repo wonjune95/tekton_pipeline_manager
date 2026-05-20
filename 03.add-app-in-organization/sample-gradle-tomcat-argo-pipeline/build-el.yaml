@@ -1,0 +1,72 @@
+apiVersion: triggers.tekton.dev/v1beta1
+kind: EventListener
+metadata:
+  labels:
+    app: {{application_name}}
+    env: {{env_menu}}
+    type: build
+  name: {{application_name}}-{{env_menu}}-build-el
+  namespace: {{organization_name}}-cicd
+spec:
+  namespaceSelector: {}
+  resources: {}
+  serviceAccountName: cicdbot
+  triggers:
+  - name: gitea
+    interceptors:
+    - ref:
+        kind: ClusterInterceptor
+        name: cel
+      params:
+      - name: filter
+        value: >-
+          header.match('X-Gitea-Event', 'push')
+      - name: overlays
+        value:
+        - expression: body.repository.clone_url.replace('/' + body.repository.full_name + '.git', '')
+          key: git-host-url
+        - expression: body.repository.owner.username
+          key: code-repo-org
+        - expression: body.repository.name.lowerAscii()
+          key: code-repo-name
+        - expression: body.after
+          key: code-revision
+        - expression: body.ref.split('/')[2]
+          key: code-branch
+    bindings:
+    - kind: TriggerBinding
+      name: git-host-url
+      value: $(extensions.git-host-url)
+    - kind: TriggerBinding
+      name: code-repo-org
+      value: $(extensions.code-repo-org)
+    - kind: TriggerBinding
+      name: code-repo-name
+      value: $(extensions.code-repo-name)
+    - kind: TriggerBinding
+      name: code-revision
+      value: $(extensions.code-revision)
+    - kind: TriggerBinding
+      name: code-branch
+      value: $(extensions.code-branch)
+    template:
+      ref: {{application_name}}-{{env_menu}}-build-tt
+  - name: trigger
+    bindings:
+    - kind: TriggerBinding
+      name: git-host-url
+      value: $(body.git-host-url)
+    - kind: TriggerBinding
+      name: code-repo-org
+      value: $(body.code-repo-org)
+    - kind: TriggerBinding
+      name: code-repo-name
+      value: $(body.code-repo-name)
+    - kind: TriggerBinding
+      name: code-revision
+      value: $(body.code-revision)
+    - kind: TriggerBinding
+      name: code-branch
+      value: $(body.code-branch)
+    template:
+      ref: {{application_name}}-{{env_menu}}-build-tt

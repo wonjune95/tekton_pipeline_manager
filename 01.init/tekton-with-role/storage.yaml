@@ -1,0 +1,22 @@
+# 클러스터 scope의 storage 정의
+# # tekton 파이프라인실행시 필요한 storage 유형별 클래스와 시스템별(=네임스페이스별) 퍼시스턴트볼륨 설정
+---
+# NAS 스토리지 sc (vm대상 빌드아티팩트 store/restore 작업용)
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: cicd-store-sc
+provisioner: kubernetes.io/no-provisioner
+reclaimPolicy: Retain
+volumeBindingMode: Immediate
+---
+# Local 스토리지 sc (기본 cicd 작업용)
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: cicd-local-sc
+provisioner: kubernetes.io/no-provisioner
+reclaimPolicy: Retain
+volumeBindingMode: Immediate

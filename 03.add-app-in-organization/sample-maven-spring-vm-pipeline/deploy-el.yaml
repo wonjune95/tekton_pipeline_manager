@@ -1,0 +1,30 @@
+apiVersion: triggers.tekton.dev/v1beta1
+kind: EventListener
+metadata:
+  labels:
+    app: {{application_name}}
+    env: {{env_menu}}
+    type: deploy
+  name: {{application_name}}-{{env_menu}}-deploy-el
+  namespace: {{organization_name}}-cicd
+spec:
+  namespaceSelector: {}
+  resources: {}
+  serviceAccountName: cicdbot
+  triggers:
+  - name: trigger
+    bindings:
+    - kind: TriggerBinding
+      name: git-host-url
+      value: $(body.git-host-url)
+    - kind: TriggerBinding
+      name: code-repo-org
+      value: $(body.code-repo-org)
+    - kind: TriggerBinding
+      name: code-repo-name
+      value: $(body.code-repo-name)
+    - kind: TriggerBinding
+      name: cicd-revision
+      value: $(body.cicd-revision)
+    template:
+      ref: {{application_name}}-{{env_menu}}-deploy-tt

@@ -1,0 +1,47 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- ../../base
+- hpa.yaml
+- ingress.yaml
+- configmap.yaml
+patches:
+- target:
+    kind: Deployment
+    name: {{application_name}}-dp
+  patch: |-
+    kind: Deployment
+    metadata:
+      name: {{application_name}}-dp
+    spec:
+      template:
+        metadata:
+        spec:
+          affinity:
+            podAntiAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+              - podAffinityTerm:
+                  labelSelector:
+                    matchLabels:
+                      app: {{application_name}}-dp
+                  topologyKey: kubernetes.io/hostname
+                weight: 1
+- target:
+    kind: PersistentVolumeClaim
+    name: {{application_name}}-log-pvc
+  patch: |-
+    kind: PersistentVolumeClaim
+    metadata:
+      name: {{application_name}}-log-pvc
+    spec:
+      resources:
+        requests:
+          storage: 25Gi
+      storageClassName: {{organization_name}}-sc
+namespace: {{organization_name}}-prod
+commonLabels:
+  app: {{application_name}}
+images:
+- name: {{application_name}}
+  newName: {{image_registry}}/{{organization_name}}-prod/{{organization_name}}/{{application_name}}
+  newTag: latest

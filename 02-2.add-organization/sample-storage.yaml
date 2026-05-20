@@ -1,0 +1,64 @@
+# 클러스터 scope의 storage 정의
+# # tekton 파이프라인실행시 필요한 storage 유형별 클래스와 시스템별(=네임스페이스별) 퍼시스턴트볼륨 설정
+# NAS 스토리지 sc (vm대상 빌드아티팩트 store/restore 작업용)
+# # NAS 스토리지 사용을 위한 워커노드 사전 작업절차
+# ssh ubuntu@@ngsc-test-cluster-pri-default-worker-node-0
+# # [cicd-store-sc]
+# sudo mkdir -p /CICD-DATA/store/{{organization_name}}-cicd
+# sudo mount -t nfs 10.10.1.69:/sc-nas/ /CICD-DATA/store
+# NAS 스토리지 pv (vm대상 빌드아티팩트 store/restore 작업용)
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{organization_name}}-cicd-store-pv
+  labels:
+    namespace: {{organization_name}}-cicd
+spec:
+  capacity:
+    storage: 10Gi
+  volumeMode: Filesystem
+  accessModes:
+  - ReadWriteOnce
+  storageClassName: cicd-store-sc
+  local:
+    path: /CICD-DATA/store/{{organization_name}}-cicd
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - {{node_selector}}
+---
+# Local 스토리지 sc (기본 cicd 작업용)
+# # Local 스토리지 사용을 위한 워커노드 사전 작업절차
+# ssh ubuntu@comm-default-worker-node-2
+# # [cicd-local-sc]
+# sudo mkdir -p /CICD-DATA/local/{{organization_name}}-cicd
+# Local 스토리지 pv (기본 cicd 작업용)
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{organization_name}}-cicd-local-pv
+  labels:
+    namespace: {{organization_name}}-cicd
+spec:
+  capacity:
+    storage: 10Gi
+  volumeMode: Filesystem
+  accessModes:
+  - ReadWriteOnce
+  storageClassName: cicd-local-sc
+  local:
+    path: /CICD-DATA/local/{{organization_name}}-cicd
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - {{node_selector}}

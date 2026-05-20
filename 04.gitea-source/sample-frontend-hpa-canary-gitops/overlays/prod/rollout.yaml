@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: {{application_name}}-ro
+spec:
+  replicas: 4
+  revisionHistoryLimit: 2
+  strategy:
+    canary:
+      canaryService: {{application_name}}-canary-svc 
+      stableService: {{application_name}}-stable-svc
+      trafficRouting:
+        nginx:
+          stableIngress: {{application_name}}-ingress  
+      steps:
+      - setWeight: 10   # 10% Canary 트래픽
+      - pause: {duration: 2m}
+      - setWeight: 50   # 50% Canary 트래픽
+      - pause: {duration: 5m}
+      - setWeight: 100  # 전체 Canary 트래픽 (승격)
+  workloadRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{application_name}}-dp

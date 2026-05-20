@@ -1,0 +1,81 @@
+# tekton 권한을 그룹이 아닌 네임스페이스 별로 나누고 싶다면,
+# ClusterRole이 아닌 Role을 적용해 줘야된다.
+apiVersion: rbac.authorization.k8s.io/v1
+#kind: Role
+kind: ClusterRole
+#namespace:
+metadata:
+  name: tekton-reviewer-global
+rules:
+  # Tekton Pipelines
+  - apiGroups: ["tekton.dev"]
+    resources: ["pipelines","pipelineruns","tasks","taskruns","runs","customruns"]
+    verbs: ["get","list","watch"]
+
+  # Tekton Triggers (사용 중일 때)
+  - apiGroups: ["triggers.tekton.dev"]
+    resources: ["eventlisteners","triggers","triggerbindings","triggertemplates","interceptors"]
+    verbs: ["get","list","watch"]
+  - apiGroups: ["triggers.tekton.dev"]
+    resources: ["clustertriggerbindings","clusterinterceptors"]
+    verbs: ["get","list","watch"]
+
+  # 실행 로그/파드 상태 조회
+  - apiGroups: [""]
+    resources: ["pods","pods/log"]
+    verbs: ["get","list","watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+#kind: RoleBinding
+kind: ClusterRoleBinding
+#namespace:
+metadata:
+  name: tekton-reviewer-global
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: tekton-reviewer-global
+subjects:
+  - kind: Group
+    apiGroup: rbac.authorization.k8s.io
+    name: gioauth_organization:viewers
+---
+apiVersion: rbac.authorization.k8s.io/v1
+#kind: Role
+kind: ClusterRole
+#namespace:
+metadata:
+  name: tekton-editor-global
+rules:
+  # Tekton Pipelines
+  - apiGroups: ["tekton.dev"]
+    resources: ["pipelines","pipelineruns","tasks","taskruns","runs","customruns"]
+    verbs: ["get","list","watch","create","update","patch","delete"]
+
+  # Tekton Triggers (사용 중일 때)
+  - apiGroups: ["triggers.tekton.dev"]
+    resources: ["eventlisteners","triggers","triggerbindings","triggertemplates","interceptors"]
+    verbs: ["get","list","watch","create","update","patch","delete"]
+  - apiGroups: ["triggers.tekton.dev"]
+    resources: ["clustertriggerbindings","clusterinterceptors"]
+    verbs: ["get","list","watch","create","update","patch","delete"]
+
+  # 실행 로그/파드 상태 조회 (필요 시)
+  - apiGroups: [""]
+    resources: ["pods","pods/log"]
+    verbs: ["get","list","watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+#kind: RoleBinding
+kind: ClusterRoleBinding
+#namespace:
+metadata:
+  name: tekton-editor-global
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: tekton-editor-global
+subjects:
+  - kind: Group
+    apiGroup: rbac.authorization.k8s.io
+    name: oauth_organization:admins

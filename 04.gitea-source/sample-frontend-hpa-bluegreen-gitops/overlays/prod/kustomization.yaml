@@ -1,0 +1,91 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- ../../base
+- configmap.yaml
+- rollout.yaml
+- hpa.yaml
+- ingress.yaml
+patches:
+- target:
+    kind: Service
+    name: {{application_name}}-blue-svc
+  patch: |-
+    kind: Service
+    metadata:
+      name: {{application_name}}-blue-svc
+      annotations:
+        TCP-80.loadbalancer.nhncloud/listener-protocol: "HTTP"
+        loadbalancer.nhncloud/apply-subnet-host-routes: "true"
+        loadbalancer.nhncloud/loadbalancer-name: "prod-{{application_name}}-lb" # 수정
+        loadbalancer.openstack.org/keep-floatingip: "true"
+        service.beta.kubernetes.io/openstack-internal-load-balancer: "true"
+    spec:
+      type: LoadBalancer
+      #loadBalancerIP: ""
+      externalTrafficPolicy: Local
+      ipFamilies:
+      - IPv4
+      ipFamilyPolicy: SingleStack
+      ports:
+      - appProtocol: http
+        name: http
+        port: 80
+        protocol: TCP
+patches:
+- target:
+    kind: Deployment
+    name: {{application_name}}-dp
+  patch: |-
+    kind: Deployment
+    metadata:
+      name: {{application_name}}-dp
+    spec:
+      template:
+        metadata:
+        spec:
+          affinity:
+            podAntiAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+              - podAffinityTerm:
+                  labelSelector:
+                    matchLabels:
+                      app: {{application_name}}
+                  topologyKey: kubernetes.io/hostname
+                weight: 1
+          containers:
+          - name: {{application_name}}-con
+            env:
+            - name: JAVA_OPTS
+              value: "-Dfile.encoding=UTF-8 -Dspring.profiles.active=prod"
+- target:
+    kind: PersistentVolumeClaim
+    name: {{application_name}}-data-pvc
+  patch: |-
+    kind: PersistentVolumeClaim
+    metadata:
+      name: {{application_name}}-data-pvc
+    spec:
+      resources:
+        requests:
+          storage: 1Gi
+      storageClassName: {{organization_name}}-sc
+- target:
+    kind: PersistentVolumeClaim
+    name: {{application_name}}-log-pvc
+  patch: |-
+    kind: PersistentVolumeClaim
+    metadata:
+      name: {{application_name}}-log-pvc
+    spec:
+      resources:
+        requests:
+          storage: 5Gi
+      storageClassName: {{organization_name}}-sc
+namespace: {{organization_name}}-prod
+commonLabels:
+  app: {{application_name}}
+images:
+- name: {{application_name}}
+  newName: {{image_registry}}/{{organization_name}}-prod/{{organization_name}}/{{application_name}}
+  newTag: latest

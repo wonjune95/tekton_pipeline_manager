@@ -1,0 +1,38 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{application_name}}-hpa                 # HorizontalPodAutoscaler object 자신의 고유 정보를 입력
+spec:                                            # HorizontalPodAutoscaler object가 수행하는 내용에 대한 설정
+  minReplicas: 2                                 # 다운스케일 시 생성할 수 있는 Pod의 최소수
+  maxReplicas: 4                                 # 업스케일 시 생성할 수 있는 Pod의 최대수
+  scaleTargetRef:                                # HorizontalPodAutoscaler object가 동작할 대상에 대한 설정
+    apiVersion: argoproj.io/v1alpha1
+    kind: Rollout
+    name: {{application_name}}-ro
+  targetCPUUtilizationPercentage: 60
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 60
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 60
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Pods
+        value: 1                                # 한 번에 1개의 파드만 축소
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0             # 즉시 스케일업
+      policies:
+      - type: Percent
+        value: 100                              # 현재 파드 수의 100%까지만 한 번에 증가
+        periodSeconds: 15

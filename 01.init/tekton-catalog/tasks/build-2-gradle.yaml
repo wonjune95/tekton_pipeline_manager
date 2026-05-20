@@ -1,0 +1,119 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: gradle
+  namespace: tekton-catalog
+spec:
+  description: This Task can be used to run a Gradle build. It uses a workspace to store Gradle local cache.
+  params:
+  - default: bash:5.2.21
+    name: BASH_IMAGE
+    type: string
+  - default: gradle:jdk11
+    description: Gradle base image
+    name: GRADLE_IMAGE
+    type: string
+  - name: GRADLE_TASKS
+    description: Gradle tasks to run
+    default:
+    - build
+    type: array
+  - default: "."
+    description: The context directory within the repository for sources on which we want to execute Gradle tasks.
+    name: CONTEXT_DIR
+    type: string
+  - default: "build/libs/*.jar"
+    name: ARTIFACT_FIND_PATTERN
+    type: string
+  - default: ""
+    name: ARTIFACT_RENAME
+    type: string
+  results:
+  - name: buildDirectory
+    type: string
+  - name: version
+    type: string
+  - name: artifactId
+    type: string
+  - name: artifactSourceName
+    type: string
+  - name: artifactTargetName
+    type: string
+  steps:
+  - name: gradle-settings
+    image: $(params.BASH_IMAGE)
+    script: |
+      #!/bin/sh
+      cp $(workspaces.gradle-settings.path)/init.gradle $(workspaces.source.path)/$(params.CONTEXT_DIR)/init.gradle
+      echo "init.gradle copied to $(workspaces.source.path)/$(params.CONTEXT_DIR)/init.gradle"
+
+      cp $(workspaces.gradle-settings.path)/gradle.properties $(workspaces.source.path)/$(params.CONTEXT_DIR)/gradle.properties
+      echo "gradle.properties copied to $(workspaces.source.path)/$(params.CONTEXT_DIR)/gradle.properties"
+  - computeResources: {}
+    env:
+    - name: TZ
+      value: Asia/Seoul
+    args:
+    - $(params.GRADLE_TASKS)
+    - --no-daemon
+    - --console=plain
+    - --gradle-user-home=$(workspaces.gradle-local-repo.path)
+    - --init-script=init.gradle
+    image: $(params.GRADLE_IMAGE)
+    name: gradle-tasks
+    workingDir: $(workspaces.source.path)/$(params.CONTEXT_DIR)
+    script: |
+      #!/usr/bin/env bash
+
+      # Import SSL certificates if ssl-ca-directory workspace is bound
+      if [ "$(workspaces.ssl-ca-directory.bound)" = "true" ]; then
+        for f in $(workspaces.ssl-ca-directory.path)/*
+        do
+          $JAVA_HOME/bin/keytool -importcert -file "${f}" -alias $(basename "${f}") -keystore $(find $JAVA_HOME -name cacerts) -storepass changeit -noprompt
+        done
+      fi
+
+      # Run Gradle tasks with local cache
+      gradle $*
+
+      if [ $? -ne 0 ]; then
+        exit 1
+      fi
+
+      # Check build results and set output variables
+      if [ -n "$(params.ARTIFACT_FIND_PATTERN)" ]; then
+        BUILD_DIRECTORY="$(echo $(params.ARTIFACT_FIND_PATTERN) | cut -d'/' -f1 | tr -d '\n')"
+        printf "%s" "${BUILD_DIRECTORY}" > "$(results.buildDirectory.path)"
+        # BUILD_DIRECTORY="$(echo $(params.ARTIFACT_FIND_PATTERN) | xargs -r dirname | head -1 | tr -d '\n')"
+        # printf "%s" "${BUILD_DIRECTORY}" > "$(results.buildDirectory.path)"
+
+
+        if [[ -f $BUILD_DIRECTORY/tmp/bootJar/MANIFEST.MF ]]; then
+          ARTIFACT_ID="$(grep '^Implementation-Title: ' $BUILD_DIRECTORY/tmp/bootJar/MANIFEST.MF | cut -d' ' -f2 | tr -d '\r')"
+          printf "%s" "${ARTIFACT_ID}" > "$(results.artifactId.path)"
+
+          VERSION="$(grep '^Implementation-Version: ' $BUILD_DIRECTORY/tmp/bootJar/MANIFEST.MF | cut -d' ' -f2 | tr -d '\r')"
+          printf "%s" "${VERSION}" > "$(results.version.path)"
+        fi
+
+        ARTIFACT_SOURCE_NAME="$(echo $(params.ARTIFACT_FIND_PATTERN) | xargs -r basename | head -1 | tr -d '\n')"
+        printf "%s" "${ARTIFACT_SOURCE_NAME}" > "$(results.artifactSourceName.path)"
+
+        ARTIFACT_TARGET_NAME=$ARTIFACT_SOURCE_NAME
+        printf "%s" "${ARTIFACT_TARGET_NAME}" > "$(results.artifactTargetName.path)"
+
+        if [ -n "$(params.ARTIFACT_RENAME)" ]; then
+          ARTIFACT_TARGET_NAME="$(echo $(params.ARTIFACT_RENAME) | tr -d '\n')"
+          printf "%s" "${ARTIFACT_TARGET_NAME}" > "$(results.artifactTargetName.path)"
+        fi
+      fi
+  workspaces:
+  - description: The workspace consisting of Gradle project.
+    name: source
+  - description: The workspace for additional Gradle settings like init.gradle and gradle.properties.
+    name: gradle-settings
+  - name: ssl-ca-directory
+    optional: true
+  - description: Local cache workspace for Gradle to store dependencies and other data.
+    name: gradle-local-repo
+    optional: true

@@ -1,0 +1,283 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: deploy-artifact-via-openssh-sftp
+  namespace: tekton-catalog
+spec:
+  description: |
+      This pipeline deploys artifacts to multiple remote servers.
+      It uses SSH to run pre and post deployment commands and SFTP to upload files.
+  params:
+  - name: git-host-url
+    default: {{gitea_domain}}
+    type: string
+  - name: code-repo-org
+    default: sample
+    type: string
+  - name: code-repo-name
+    default: sample-egov2vm
+    type: string
+  - name: code-repo-url
+    default: $(params.git-host-url)/$(params.code-repo-org)/$(params.code-repo-name).git
+    type: string
+  - name: server_hosts
+    default: []
+    type: array
+  - name: server_port
+    default: "22"
+    type: string
+  - name: server_user
+    default: tomcat
+    type: string
+  - name: source_file
+    default: "*.war"
+    type: string
+  - name: target_path
+    default: /app/tomcat/webapps
+    type: string
+  - name: pre_sftp_ssh_command
+    default: ls -l $(params.target_path);
+    type: string
+  - name: post_sftp_ssh_command
+    default: ls -l $(params.target_path);
+    type: string
+  - name: app-env
+    default: tdev
+    type: string
+  - name: app-name
+    default: $(params.code-repo-name)
+    type: string
+  - name: skip-app-sync
+    default: "false"
+    type: string
+  - name: cicd-repo-org
+    default: $(params.code-repo-org)-cicd
+    type: string
+  - name: cicd-repo-name
+    default: $(params.code-repo-name)-$(params.app-env)
+    type: string
+  - name: cicd-repo-url
+    default: $(params.git-host-url)/$(params.code-repo-org)-cicd/$(params.code-repo-name)-$(params.app-env).git
+    type: string
+  - name: cicd-revision
+    default: main
+    type: string
+  - name: cicd-auto-tag
+    default: $(tasks.cicd-fetch.results.cicd-auto-tag-prefix)$(context.pipelineRun.name)
+    type: string
+  - name: working-pr-dir
+    default: $(context.pipelineRun.name)
+    type: string
+  tasks:
+  - displayName: CICD Repo Fetch
+    name: cicd-fetch
+    params:
+    - name: gitInitImage
+      value: {{image_registry}}/nnd/tekton-cicd/git-init:v0.40.2-tz
+    - name: crtFileName
+      value: ca-certificates.crt
+    - name: sslVerify
+      value: "false"
+    - name: deleteExisting
+      value: "true"
+    - name: subdirectory
+      value: $(params.working-pr-dir)/$(params.cicd-repo-name)
+    - name: url
+      value: $(params.cicd-repo-url)
+    - name: revision
+      value: $(params.cicd-revision)
+    taskRef:
+      kind: Task
+      params:
+      - name: kind
+        value: task
+      - name: name
+        value: git-clone
+      - name: namespace
+        value: tekton-catalog
+      resolver: cluster
+    workspaces:
+    - name: output
+      workspace: shared-data
+    - name: basic-auth
+      workspace: gitconfig
+    - name: ssl-ca-directory
+      workspace: ssl-ca-directory
+  - displayName: Artifact Restore
+    name: artifact-restore
+    params:
+    - name: SCRIPT
+      value: |
+        #!/bin/bash
+        ARTIFACT_RESTORE_PATH=$(workspaces.source.path)/$(params.working-pr-dir)/$(params.cicd-repo-name)
+        FULL_PATH_STORED_NAME=$(grep 'fullPathStoreName=' $ARTIFACT_RESTORE_PATH/ARTIFACT.txt | cut -d '=' -f 2-)
+        echo "########## FULL_PATH_STORED_NAME ##########"
+        echo $FULL_PATH_STORED_NAME
+        #
+        echo "########## ARTIFACT RESTORE PATH ##########"
+        echo $ARTIFACT_RESTORE_PATH
+        cp $FULL_PATH_STORED_NAME $ARTIFACT_RESTORE_PATH/
+        find $ARTIFACT_RESTORE_PATH -mindepth 1 -maxdepth 1
+        #
+        ARTIFACT_STORE_BASE=$(workspaces.store.path)/$(params.cicd-repo-name)
+        find $ARTIFACT_STORE_BASE -mindepth 1 -maxdepth 1 -type d | sort -r | tail -n +11 | xargs -r rm -rf
+        echo "########## FIND STORED ARTIFACTS ##########"
+        find $ARTIFACT_STORE_BASE -mindepth 2 -maxdepth 2 | sort -r
+    runAfter:
+    - cicd-fetch
+    taskSpec:
+      metadata: {}
+      params:
+      - name: SCRIPT
+        type: string
+      spec: null
+      steps:
+      - computeResources: {}
+        image: {{image_registry}}/nnd/tekton-cicd/ubuntu:jammy
+        name: restore
+        script: |
+          #!/usr/bin/env bash
+          eval '$(params.SCRIPT)'
+      workspaces:
+      - name: store
+      - name: source
+    workspaces:
+    - name: store
+      workspace: stored-data
+    - name: source
+      workspace: shared-data
+  - displayName: Artifact Upload
+    name: artifact-upload
+    matrix:
+      params:
+      - name: SSH_HOST
+        value: "$(params.server_hosts)"
+    params:
+    - name: CONTEXT_DIR
+      value: $(params.working-pr-dir)/$(params.cicd-repo-name)
+    - name: IMAGE
+      value: {{image_registry}}/nnd/tekton-cicd/ubuntu-openssh-client:jammy
+    - name: SSH_PORT
+      value: "$(params.server_port)"
+    - name: SSH_USER
+      value: "$(params.server_user)"
+    - name: PRE_SFTP_SSH_COMMAND
+      value: "$(params.pre_sftp_ssh_command)"
+    - name: POST_SFTP_SSH_COMMAND
+      value: "$(params.post_sftp_ssh_command)"
+    - name: SOURCE_FILE
+      value: "$(params.source_file)"
+    - name: TARGET_PATH
+      value: "$(params.target_path)"
+    runAfter:
+    - artifact-restore
+    taskRef:
+      kind: Task
+      params:
+      - name: kind
+        value: task
+      - name: name
+        value: openssh-sftp
+      - name: namespace
+        value: tekton-catalog
+      resolver: cluster
+    workspaces:
+    - name: source
+      workspace: shared-data
+    - name: credentials
+      workspace: ssh-credentials
+  - displayName: CICD Repo Tag(#deployed) push
+    name: cicd-tagpush
+    when:
+    - input: $(params.skip-app-sync)
+      operator: in
+      values:
+      - "false"
+    params:
+    - name: CONTEXT_DIR
+      value: $(params.working-pr-dir)/$(params.cicd-repo-name)
+    - name: BASE_IMAGE
+      value: {{image_registry}}/nnd/tekton-cicd/chainguard-git:2.43.0
+    - name: CRT_FILENAME
+      value: ca-certificates.crt
+    - name: USER_HOME
+      value: /home/git
+    - name: GIT_USER_NAME
+      value: cicdbot
+    - name: GIT_USER_EMAIL
+      value: cicdbot@example.com
+    - name: GIT_SCRIPT
+      value: |
+        DEPLOYED_TAG=$(cat README.md)#$(params.cicd-auto-tag)
+        git fetch --prune --prune-tags -f && git tag --list '*#*' | xargs -r git push origin --delete
+        git fetch --prune --prune-tags -f && git tag --list --sort=-version:refname | tail -n +11 | xargs -r git push origin --delete
+        git fetch --prune --prune-tags -f && git tag $DEPLOYED_TAG $(git rev-parse --short HEAD)
+        git push origin $DEPLOYED_TAG
+    retries: 3
+    runAfter:
+    - artifact-upload
+    taskRef:
+      kind: Task
+      params:
+      - name: kind
+        value: task
+      - name: name
+        value: git-cli
+      - name: namespace
+        value: tekton-catalog
+      resolver: cluster
+    workspaces:
+    - name: source
+      workspace: shared-data
+    - name: basic-auth
+      workspace: gitconfig
+    - name: ssl-ca-directory
+      workspace: ssl-ca-directory
+  finally:
+  - displayName: Cleanup Policy
+    name: cleanup-policy
+    params:
+    - name: SCRIPT
+      value: |
+        find $(workspaces.source.path) -mindepth 1 -maxdepth 1 -type d -name "$(params.working-pr-dir)" | xargs -r rm -rf
+
+        tkn pipelinerun delete --force --keep 0 --all $1 -n $(context.pipelineRun.namespace)
+        tkn pipelinerun list $1 -n $(context.pipelineRun.namespace)
+        echo $1
+    - name: ARGS
+      value:
+      - --label app=$(params.app-name),env=$(params.app-env),type=deploy,tekton.dev/pipeline!=$(params.app-name)-$(params.app-env)-deploy-pr
+    taskSpec:
+      metadata: {}
+      params:
+      - name: SCRIPT
+        type: string
+      - name: ARGS
+        type: array
+      spec: null
+      steps:
+      - args:
+        - $(params.ARGS)
+        computeResources: {}
+        image: {{image_registry}}/nnd/tekton-cicd/tkn:v0.12.0
+        name: tkn
+        script: |
+          if [ "$(workspaces.kubeconfig.bound)" = "true" ] && [ -e $(workspaces.kubeconfig.path)/kubeconfig ]; then
+            export KUBECONFIG="$(workspaces.kubeconfig.path)"/kubeconfig
+          fi
+          eval "$(params.SCRIPT)"
+      workspaces:
+      - name: source
+      - name: kubeconfig
+    workspaces:
+    - name: source
+      workspace: shared-data
+    - name: kubeconfig
+      workspace: kubeconfig
+  workspaces:
+  - name: stored-data
+  - name: shared-data
+  - name: gitconfig
+  - name: ssl-ca-directory
+  - name: ssh-credentials
+  - name: kubeconfig

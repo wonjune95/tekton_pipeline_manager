@@ -1,0 +1,25 @@
+# 추가
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/component: dashboard
+    app.kubernetes.io/instance: default
+    app.kubernetes.io/part-of: tekton-dashboard
+    rbac.dashboard.tekton.dev/subject: tekton-dashboard
+  name: tekton-dashboard-tenant-runners
+  namespace: {{organization_name}}-cicd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: tekton-dashboard-tenant-runners
+subjects:
+- apiGroup: rbac.authorization.k8s.io
+  kind: User
+  name: cicdbot
+- apiGroup: rbac.authorization.k8s.io
+  kind: User
+  name: devopsmanager
+- kind: ServiceAccount
+  name: tekton-dashboard
+  namespace: tekton-pipelines

@@ -1,0 +1,91 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  annotations:
+    tekton.dev/categories: Security
+    tekton.dev/displayName: trivy scanner
+    tekton.dev/pipelines.minVersion: 0.12.1
+    tekton.dev/platforms: linux/amd64,linux/arm64,linux/ppc64le,linux/390x
+    tekton.dev/tags: CLI, trivy
+  labels:
+    app.kubernetes.io/version: "0.2.1"
+    hub.tekton.dev/catalog: tekton
+  name: trivy-scanner
+  namespace: tekton-catalog
+spec:
+  description: |-
+    Trivy is a simple and comprehensive scanner for vulnerabilities in container images,file systems ,and Git repositories, as well as for configuration issues.
+    This task can be used to scan for vulnenrabilities on the source code in stand alone mode.
+  params:
+  - default: ""
+    name: CONTEXT_DIR
+    type: string
+  - description: The Arguments to be passed to Trivy command.
+    name: ARGS
+    type: array
+  - default: docker.io/aquasec/trivy@sha256:944a044451791617cc0ed2ee4d1942a4f66b790d527fcd0575a6b399ccbc05a1
+    description: Trivy scanner image to be used
+    name: TRIVY_IMAGE
+    type: string
+  - default: ""
+    description: Image to be scanned by trivy.
+    name: IMAGE
+    type: string
+  - default: "false"
+    description: a flag enabling Air-Gapped mode
+    name: AIR_GAPPED_ENABLED
+    type: string
+  steps:
+  - args:
+    - $(params.ARGS)
+    computeResources: {}
+    env:
+    - name: TZ
+      value: Asia/Seoul
+    image: $(params.TRIVY_IMAGE)
+    name: trivy-scan
+    script: |
+      #!/usr/bin/env sh
+
+      cmd="trivy $*"
+
+      if [ ! -d $(workspaces.trivy-local-cache.path)/.cache/trivy/db ]; then
+        # Download Trivy database for general images
+        # TRIVY_TEMP_DIR=$(mktemp -d)
+        # trivy --cache-dir "$TRIVY_TEMP_DIR" image --download-db-only
+        # tar -cf $(workspaces.trivy-local-cache.path)/db.tar.gz -C "$TRIVY_TEMP_DIR/db" metadata.json trivy.db
+        # rm -rf "$TRIVY_TEMP_DIR"
+        wget -P $(workspaces.trivy-local-cache.path) {{nexus_host_url_rawfile_internal}}/trivy/db.tar.gz
+        mkdir -p $(workspaces.trivy-local-cache.path)/.cache/trivy/db
+        tar xvf $(workspaces.trivy-local-cache.path)/db.tar.gz -C $(workspaces.trivy-local-cache.path)/.cache/trivy/db
+      fi
+
+      if [ ! -d $(workspaces.trivy-local-cache.path)/.cache/trivy/java-db ]; then
+        # Download Trivy database for Java images
+        # TRIVY_TEMP_DIR=$(mktemp -d)
+        # trivy --cache-dir "$TRIVY_TEMP_DIR" image --download-java-db-only
+        # tar -cf $(workspaces.trivy-local-cache.path)/java-db.tar.gz -C "$TRIVY_TEMP_DIR/java-db" metadata.json trivy-java.db
+        # rm -rf "$TRIVY_TEMP_DIR"
+        wget -P $(workspaces.trivy-local-cache.path) {{nexus_host_url_rawfile_internal}}/trivy/java-db.tar.gz
+        mkdir -p $(workspaces.trivy-local-cache.path)/.cache/trivy/java-db
+        tar xvf $(workspaces.trivy-local-cache.path)/java-db.tar.gz -C $(workspaces.trivy-local-cache.path)/.cache/trivy/java-db
+      fi
+
+      if [ "$(params.AIR_GAPPED_ENABLED)" = "true" ]; then
+        echo "Air-Gapped mode enabled"
+        cmd="${cmd} --skip-db-update --skip-java-db-update --offline-scan"
+      fi
+
+      cmd="${cmd} --cache-dir $(workspaces.trivy-local-cache.path)/.cache/trivy $(params.IMAGE)"
+      echo "Running trivy task with command below"
+      echo "$cmd"
+      $cmd  # Directly execute the command without eval
+
+    workingDir: $(workspaces.source.path)/$(params.CONTEXT_DIR)
+  workspaces:
+  - name: source
+  - name: ssl-ca-directory
+    mountPath: /etc/ssl/certs
+    optional: true
+  - name: trivy-local-cache
+    optional: true

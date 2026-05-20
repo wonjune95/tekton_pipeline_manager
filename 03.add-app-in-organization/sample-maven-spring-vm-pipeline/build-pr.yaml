@@ -1,0 +1,91 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  labels:
+    app: {{application_name}}
+    env: {{env_menu}}
+    type: build
+  name: {{application_name}}-{{env_menu}}-build-pr
+  namespace: {{organization_name}}-cicd
+spec:
+  params:
+  - name: git-host-url
+    value: {{gitea_domain}}
+  - name: code-repo-org
+    value: {{organization_name}}
+  - name: code-repo-name
+    value: {{application_name}}
+  - name: code-repo-url
+    value: $(params.git-host-url)/$(params.code-repo-org)/$(params.code-repo-name).git
+  - name: code-revision
+    value: {{branch_menu}}
+  - name: code-branch
+    value: {{branch_menu}}
+  - name: java-version
+    value: "11"
+  - name: artifact-find-pattern
+    value: target/*.war
+  - name: artifact-rename
+    value: ROOT.war
+  - name: skip-code-test
+    value: "false"
+  - name: skip-code-analysis
+    value: "false"
+  - name: skip-code-artifact
+    value: "false"
+  - name: skip-deploy-trigger
+    value: "false"
+  - name: app-env
+    value: {{env_menu}}
+  - name: app-name
+    value: $(params.code-repo-name)
+  - name: cicd-repo-org
+    value: $(params.code-repo-org)-cicd
+  - name: cicd-repo-name
+    value: $(params.code-repo-name)-$(params.app-env)
+  - name: cicd-repo-url
+    value: $(params.git-host-url)/$(params.code-repo-org)-cicd/$(params.code-repo-name)-$(params.app-env).git
+  - name: deploy-el-name
+    value: $(params.code-repo-name)-$(params.app-env)-deploy-el
+  pipelineRef:
+    params:
+    - name: kind
+      value: pipeline
+    - name: name
+      value: build-maven-spring-artifact
+    - name: namespace
+      value: tekton-catalog
+    resolver: cluster
+  status: PipelineRunPending
+  taskRunTemplate:
+    serviceAccountName: cicdbot
+  timeouts:
+    pipeline: 1h0m0s
+  workspaces:
+  - name: stored-data
+    persistentVolumeClaim:
+      claimName: cicdvol-shared-store-pvc
+    subPath: $(params.code-repo-name)
+  - name: shared-data
+    persistentVolumeClaim:
+      claimName: cicdvol-shared-local-pvc
+    subPath: $(params.code-repo-name)
+  - name: gitconfig
+    secret:
+      secretName: cicdbot-gitconfig-secret
+  - name: ssl-ca-directory
+    secret:
+      secretName: cicdssl-cacerts-secret
+  - name: maven-settings
+    secret:
+      secretName: cicdbot-nexus-secret
+  - name: maven-local-repo
+    persistentVolumeClaim:
+      claimName: cicdvol-shared-local-pvc
+    subPath: .maven-local-repo
+  - name: sonar-credentials
+    secret:
+      secretName: cicdbot-sonarqube-secret
+  - name: kubeconfig
+    secret:
+      secretName: cicdbot-kubeconfig-secret
