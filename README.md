@@ -107,13 +107,8 @@ gitops/
 
 ## 1단계: 설정 파일 작성
 
-`00.reset/tekton_init.toml` 을 복사하여 프로젝트 루트에 `tekton_init.toml` 파일을 만들고 실제 환경값으로 채웁니다.
-
-```
-gitops/
-├── tekton_init.toml   ← 여기에 위치해야 함
-└── yaml_maker.py
-```
+`00.reset/tekton_init.toml` 을 **그 자리에서 직접 수정**합니다. 복사할 필요 없습니다.  
+`yaml_maker.py`는 실행 시 `00.reset/tekton_init.toml`을 자동으로 읽습니다.
 
 설정 파일은 14개 섹션으로 구성됩니다.
 
@@ -216,6 +211,20 @@ kubectl apply -f result/{project_name}/01-5.init-tekton-group-role.yaml
 ## 메뉴 2: 조직 추가
 
 새로운 팀/프로젝트 단위의 **조직(네임스페이스)** 을 추가합니다.
+
+### 네임스페이스 명명 규칙
+
+Gitea의 조직명을 기준으로, 각 클러스터에 생성되는 네임스페이스가 결정됩니다.  
+예를 들어 Gitea 조직명이 `sample`이면:
+
+| 클러스터 | 네임스페이스 |
+|----------|-------------|
+| CI/CD (ND) 클러스터 | `sample-cicd` |
+| 개발(dev) 클러스터 | `sample-dev` |
+| 검증(stg) 클러스터 | `sample-stg` |
+| 운영(prod) 클러스터 | `sample-prod` |
+
+> **사전 조건**: 메뉴 2 실행 전에 Gitea에 해당 조직이 먼저 생성되어 있어야 합니다.
 
 ### 사전 준비
 
@@ -323,6 +332,48 @@ Gitea에 GitOps 저장소를 만들고 배포용 YAML 템플릿을 자동으로 
    - `{앱명}-dev` — 앱 소스 저장소 (dev)
    - `{앱명}-prod` — 앱 소스 저장소 (prod)
 3. `04.gitea-source/` 템플릿을 렌더링하여 `{앱명}-gitops` 저장소에 push
+
+---
+
+## Task / Pipeline 커스텀
+
+`01-2.init-pipeline.yaml`에는 모든 Task와 Pipeline이 포함되어 있습니다.  
+특정 Task나 Pipeline만 수정이 필요한 경우, 해당 부분만 별도 파일로 만들어 적용합니다.
+
+**원본 템플릿 위치**
+
+```
+01.init/tekton-catalog/
+├── tasks/
+│   ├── build-1-deploy-git-clone.yaml
+│   ├── build-2-maven.yaml
+│   ├── build-2-gradle.yaml
+│   ├── build-2-npm.yaml
+│   ├── build-3-image-kaniko.yaml
+│   ├── build-4-analyze-sonarqube.yaml
+│   ├── build-4-analyze-trivy.yaml
+│   ├── build-4-analyze-polaris.yaml
+│   ├── build-5-gitops-git-cli.yaml
+│   └── ...
+└── pipelines/
+    ├── build-maven-spring-boot-image.yaml
+    ├── build-npm-nodejs-nginx-image.yaml
+    └── ...
+```
+
+**커스텀 절차**
+
+1. `01.init/tekton-catalog/tasks/` 또는 `pipelines/` 에서 수정할 파일을 복사
+2. 파일명과 내부 `metadata.name` 을 새 이름으로 변경
+3. 필요한 부분(Dockerfile 경로, 이미지, 파라미터 등) 수정
+4. 클러스터에 직접 적용
+
+```bash
+# 예시: sonarqube-scanner Task를 커스텀한 경우
+kubectl apply -f my-sonarqube-scanner-custom.yaml -n tekton-catalog
+```
+
+> **주의**: `metadata.name`을 기본값과 다르게 지정했다면, 이 Task를 참조하는 Pipeline에서도 `taskRef.name`을 함께 수정해야 합니다.
 
 ---
 
