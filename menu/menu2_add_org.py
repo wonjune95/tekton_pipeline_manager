@@ -3,9 +3,11 @@ import re
 import json
 import base64
 import subprocess
+import requests
 import inquirer
 import paramiko
 from jinja2 import Environment, FileSystemLoader
+from menu.util.component_api import get_oragnizaion as get_organization
 from menu.util.ui import draw_menu, safe_prompt, validate_k8s_name
 
 def _load_private_key(pem_path):
@@ -27,6 +29,7 @@ def menu2():
             {'key': '3', 'name': '캐시 폴더 초기화',   'name_v': 15},
             {'key': '9', 'name': '뒤로가기',           'name_v':  8},
         ], notes=[
+            '조직추가 실행 전 Gitea에 대상 조직을 먼저 생성해야 합니다.',
             'rbac 파일은 필수요소입니다:',
             '  kubectl get ClusterRoleBinding cicdbot -o yaml > ./02-2.add-organization/rbac.yaml',
             '네이버와 NHN의 환경이 다르므로 RBAC의 내용을 확인하시고 적용바랍니다.',
@@ -121,11 +124,32 @@ def add_org_execute():
     with open(result_file, 'r') as f_in:
         data = json.load(f_in)
 
-    # 조직명 입력 및 경로 준비
-    organization_name = input('\033[96m추가할 조직명을 입력해주세요(소문자·숫자·하이픈, 예: my-org): \033[0m').strip()
+    # Gitea에서 조직 목록 조회 후 선택
+    try:
+        org_res = json.loads(get_organization(data))
+    except (requests.HTTPError, requests.ConnectionError, ValueError) as e:
+        print(f'\033[91mGitea API 오류 (조직 조회 실패): {e}\033[0m')
+        input('\033[0m계속하려면 엔터를 눌러주세요. ')
+        return
+
+    organization_name_list = [item['name'] for item in org_res if 'cicd' not in item['name']]
+    if not organization_name_list:
+        print('\033[91m조직이 존재하지 않습니다. Gitea에 조직을 먼저 생성한 후 재실행하세요.\033[0m')
+        input('\033[0m계속하려면 엔터를 눌러주세요. ')
+        return
+
+    options = [inquirer.List("option", message="추가할 조직을 선택해주세요", choices=organization_name_list)]
+    select = safe_prompt(options)
+    if not select:
+        return
+    organization_name = select['option']
+
+    # 선택된 Gitea 조직명이 K8s namespace로 유효한지 검증
     err = validate_k8s_name(organization_name, '조직명')
     if err:
         print(f'\033[91m{err}\033[0m')
+        print('\033[91mGitea 조직명을 K8s namespace 규칙에 맞게 수정 후 재실행하세요.\033[0m')
+        input('\033[0m계속하려면 엔터를 눌러주세요. ')
         return
     data['organization_name'] = organization_name
     org_result_path = os.path.join(result_path, f'{organization_name}-cicd')
