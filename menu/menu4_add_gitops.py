@@ -5,7 +5,6 @@ import requests
 import inquirer
 import subprocess as cmd
 from urllib.parse import quote as _urlquote
-from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 from menu.util import component_api as _cap
 from menu.menu1_init import screen_init_value
