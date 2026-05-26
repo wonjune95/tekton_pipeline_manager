@@ -9,28 +9,36 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PY_PKG_DIR="$SCRIPT_DIR/packages"
-DEB_DIR="$SCRIPT_DIR/debs"
 REQ_FILE="$SCRIPT_DIR/../requirements.txt"
+
+# Ubuntu 버전 감지 (22 / 24 / 26)
+UBUNTU_VER=$(grep '^VERSION_ID=' /etc/os-release 2>/dev/null | cut -d'=' -f2 | tr -d '"' | cut -d'.' -f1 || echo "22")
+
+# 버전별 debs 디렉토리 우선, 없으면 debs/ (레거시) 로 fallback
+DEB_DIR="$SCRIPT_DIR/debs/ubuntu${UBUNTU_VER}"
+if [ ! -d "$DEB_DIR" ] || [ -z "$(find "$DEB_DIR" -maxdepth 1 -name '*.deb' 2>/dev/null | head -1)" ]; then
+    DEB_DIR="$SCRIPT_DIR/debs"
+fi
 
 echo "════════════════════════════════════════════════"
 echo "  Ubuntu 오프라인 설치"
 echo "════════════════════════════════════════════════"
-echo "  OS    : $(lsb_release -d 2>/dev/null | cut -f2 || cat /etc/os-release | grep PRETTY_NAME | cut -d'"' -f2)"
+echo "  OS    : $(grep '^PRETTY_NAME=' /etc/os-release 2>/dev/null | cut -d'=' -f2 | tr -d '"' || echo '확인불가')"
 echo ""
 
 # ── [1/2] 시스템 패키지 설치 (git, python3-pip) ──────
 echo "[1/2] 시스템 패키지 설치 ..."
 
-if [ -d "$DEB_DIR" ] && [ "$(ls -A "$DEB_DIR" 2>/dev/null)" ]; then
-    # 의존성 순서 무시하고 일괄 설치 후 깨진 의존성 자동 복구
+DEB_COUNT=$(find "$DEB_DIR" -maxdepth 1 -name '*.deb' 2>/dev/null | wc -l)
+if [ "$DEB_COUNT" -gt 0 ]; then
+    echo "      경로   : $DEB_DIR ($DEB_COUNT개)"
     dpkg -i "$DEB_DIR"/*.deb 2>/dev/null || true
     apt-get install -f -y 2>/dev/null || true
     echo "      git    : $(git --version 2>/dev/null || echo '확인 필요')"
     echo "      python3: $(python3 --version 2>/dev/null || echo '확인 필요')"
     echo "      pip    : $(python3 -m pip --version 2>/dev/null | cut -d' ' -f1-2 || echo '확인 필요')"
 else
-    echo "      [WARN] debs/ 폴더 없음 또는 비어 있음 — 시스템 패키지 건너뜀"
+    echo "      [WARN] debs/ubuntu${UBUNTU_VER}/ 및 debs/ 폴더 없음 또는 비어 있음 — 시스템 패키지 건너뜀"
     echo "             git, python3-pip 가 이미 설치되어 있는지 확인하세요."
 fi
 
@@ -50,7 +58,15 @@ fi
 echo ""
 echo "[2/2] Python 패키지 오프라인 설치 ..."
 
-if [ ! -d "$PY_PKG_DIR" ] || [ -z "$(ls -A "$PY_PKG_DIR" 2>/dev/null)" ]; then
+# 버전별 디렉토리 우선, 없으면 공통 디렉토리 fallback
+VERSIONED_PKG="$SCRIPT_DIR/packages/ubuntu${UBUNTU_VER}"
+COMMON_PKG="$SCRIPT_DIR/packages"
+PY_PKG_DIR=""
+if [ -d "$VERSIONED_PKG" ] && [ -n "$(find "$VERSIONED_PKG" -maxdepth 1 -name '*.whl' 2>/dev/null | head -1)" ]; then
+    PY_PKG_DIR="$VERSIONED_PKG"
+elif [ -d "$COMMON_PKG" ] && [ -n "$(find "$COMMON_PKG" -maxdepth 1 -name '*.whl' 2>/dev/null | head -1)" ]; then
+    PY_PKG_DIR="$COMMON_PKG"
+else
     echo "[ERROR] packages/ 폴더가 없거나 비어 있습니다."
     echo "        인터넷 연결 환경에서 download.sh 를 먼저 실행하세요."
     exit 1
