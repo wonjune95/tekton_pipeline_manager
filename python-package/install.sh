@@ -90,11 +90,30 @@ select_python() {
         fi
     done
 
+    # PATH에 없어도 /usr/bin 직접 탐색 (dnf localinstall 직후 hash 갱신 전 대비)
+    for bin in /usr/bin/python3.9 /usr/bin/python39 /usr/bin/python3.8 \
+               /usr/bin/python3.11 /usr/bin/python3.10 /usr/local/bin/python3.9; do
+        if [ -x "$bin" ]; then
+            local minor
+            minor=$("$bin" --version 2>&1 | grep -oP '(?<=Python 3\.)\d+' || echo 0)
+            if [ "${minor:-0}" -ge 8 ]; then
+                PYTHON="$bin"
+                return
+            fi
+        fi
+    done
+
     echo "[ERROR] Python 3.8 이상을 찾을 수 없습니다."
+    echo "  [진단] PATH 내 python 명령어:"
+    compgen -c 2>/dev/null | grep -E '^python' | sort -u | head -10 || true
+    echo "  [진단] /usr/bin/python*:"
+    ls /usr/bin/python* 2>/dev/null | head -10 || true
+    echo "  [진단] 설치된 python RPM:"
+    rpm -qa 2>/dev/null | grep -i python | head -10 || true
     case "$OS_TYPE:$OS_VER" in
-        rocky:8)  echo "        sudo dnf install -y python39 python39-pip" ;;
-        rocky:*)  echo "        sudo dnf install -y python3 python3-pip" ;;
-        ubuntu:*) echo "        sudo apt-get install -y python3 python3-pip" ;;
+        rocky:8)  echo "  → sudo dnf install -y python39 python39-pip" ;;
+        rocky:*)  echo "  → sudo dnf install -y python3 python3-pip" ;;
+        ubuntu:*) echo "  → sudo apt-get install -y python3 python3-pip" ;;
     esac
     exit 1
 }
@@ -263,13 +282,18 @@ esac
 select_python
 
 if ! "$PYTHON" -m pip --version &>/dev/null; then
-    echo "[ERROR] pip를 찾을 수 없습니다."
-    case "$OS_TYPE:$OS_VER" in
-        rocky:8)  echo "        sudo dnf install -y python39-pip" ;;
-        rocky:*)  echo "        sudo dnf install -y python3-pip" ;;
-        ubuntu:*) echo "        sudo apt-get install -y python3-pip" ;;
-    esac
-    exit 1
+    echo "[WARN] pip가 없습니다. ensurepip 부트스트랩 시도 중 ..."
+    if "$PYTHON" -m ensurepip --upgrade 2>/dev/null; then
+        echo "      ensurepip 성공 — pip 사용 가능"
+    else
+        echo "[ERROR] pip를 찾을 수 없습니다."
+        case "$OS_TYPE:$OS_VER" in
+            rocky:8)  echo "        sudo dnf install -y python39-pip" ;;
+            rocky:*)  echo "        sudo dnf install -y python3-pip" ;;
+            ubuntu:*) echo "        sudo apt-get install -y python3-pip" ;;
+        esac
+        exit 1
+    fi
 fi
 
 install_python_pkgs

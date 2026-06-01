@@ -117,15 +117,28 @@ echo "      경로: $RPM_DIR"
 case "$ROCKY_VER" in
     8)
         # Rocky 8: python39 우선, 없으면 python38, 마지막으로 python3
-        sudo "$DNF" download --resolve --destdir="$RPM_DIR" \
-            git python39 python39-pip 2>/dev/null || \
-        sudo "$DNF" download --resolve --destdir="$RPM_DIR" \
-            git python38 python38-pip 2>/dev/null || \
-        sudo "$DNF" download --resolve --destdir="$RPM_DIR" \
-            git python3 python3-pip
+        # --resolve 만 쓰면 다운로드 머신에 이미 설치된 패키지 본체가 빠짐
+        # → 먼저 패키지 자체를 명시 다운로드(--resolve 없이), 그 다음 의존성 포함 다운로드
+        if sudo "$DNF" download --destdir="$RPM_DIR" \
+                python39 python39-pip 2>/dev/null; then
+            sudo "$DNF" download --resolve --destdir="$RPM_DIR" \
+                git python39 python39-pip 2>/dev/null || true
+        elif sudo "$DNF" download --destdir="$RPM_DIR" \
+                python38 python38-pip 2>/dev/null; then
+            sudo "$DNF" download --resolve --destdir="$RPM_DIR" \
+                git python38 python38-pip 2>/dev/null || true
+        else
+            sudo "$DNF" download --destdir="$RPM_DIR" \
+                python3 python3-pip 2>/dev/null || true
+            sudo "$DNF" download --resolve --destdir="$RPM_DIR" \
+                git python3 python3-pip 2>/dev/null || true
+        fi
+        sudo "$DNF" download --destdir="$RPM_DIR" git 2>/dev/null || true
         ;;
     *)
-        # Rocky 9 / 10
+        # Rocky 9 / 10: 패키지 본체 먼저, 의존성 포함 다시
+        sudo "$DNF" download --destdir="$RPM_DIR" \
+            git python3 python3-pip 2>/dev/null || true
         sudo "$DNF" download --resolve --destdir="$RPM_DIR" \
             git python3 python3-pip
         ;;

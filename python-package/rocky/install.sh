@@ -70,14 +70,47 @@ for CANDIDATE in python3.12 python3.11 python3.10 python3.9 python39 python3.8 p
     fi
 done
 
+# PATH에 없어도 /usr/bin 직접 탐색 (dnf localinstall 직후 hash 갱신 전 대비)
+if [ -z "$PYTHON" ]; then
+    for BIN in /usr/bin/python3.9 /usr/bin/python39 /usr/bin/python3.8 \
+               /usr/bin/python3.11 /usr/bin/python3.10 /usr/local/bin/python3.9; do
+        if [ -x "$BIN" ]; then
+            MINOR=$("$BIN" --version 2>&1 | grep -oP '(?<=Python 3\.)\d+' || echo 0)
+            if [ "${MINOR}" -ge 8 ]; then
+                PYTHON="$BIN"
+                break
+            fi
+        fi
+    done
+fi
+
 if [ -z "$PYTHON" ]; then
     echo "[ERROR] Python 3.8 이상이 없습니다."
+    echo "  [진단] /usr/bin/python*:"
+    ls /usr/bin/python* 2>/dev/null | head -10 || true
+    echo "  [진단] 설치된 python RPM:"
+    rpm -qa 2>/dev/null | grep -i python | head -10 || true
+    if [ "$ROCKY_VER" = "8" ]; then
+        echo "  → sudo dnf install -y python39 python39-pip"
+    else
+        echo "  → sudo dnf install -y python3 python3-pip"
+    fi
     exit 1
 fi
 
 if ! $PYTHON -m pip --version &>/dev/null; then
-    echo "[ERROR] pip가 없습니다."
-    exit 1
+    echo "[WARN] pip가 없습니다. ensurepip 부트스트랩 시도 중 ..."
+    if $PYTHON -m ensurepip --upgrade 2>/dev/null; then
+        echo "      ensurepip 성공 — pip 사용 가능"
+    else
+        echo "[ERROR] pip가 없습니다."
+        if [ "$ROCKY_VER" = "8" ]; then
+            echo "        sudo dnf install -y python39-pip"
+        else
+            echo "        sudo dnf install -y python3-pip"
+        fi
+        exit 1
+    fi
 fi
 
 # ── [2/2] Python 패키지 설치 (오프라인) ──────────────

@@ -20,19 +20,38 @@ Kubernetes 환경에서 Tekton CI/CD 파이프라인을 **자동으로 설치·�
 | Python | 3.8 이상 |
 | kubectl | 클러스터 접근 가능 상태 |
 
-### Python 패키지 설치 (오프라인)
+### Python 패키지 설치 (오프라인 — 폐쇄망)
 
-폐쇄망 환경에서는 `python-package/` 폴더 안의 스크립트로 설치합니다.
+폐쇄망 설치는 **2단계**로 진행합니다.
+
+#### Step 1. 인터넷 되는 PC에서 패키지 다운로드 (Docker 필요)
+
+Docker Desktop이 설치된 Windows PC에서 Git Bash를 열고 실행합니다.
 
 ```bash
-# Ubuntu
-cd python-package/ubuntu/
-chmod +x install.sh && sudo ./install.sh
+cd python-package/
+bash download_docker.sh
+```
 
-# Rocky Linux 8 / 9 (버전 자동 감지)
-cd python-package/rocky/
+- `rocky/rpms/rocky8/`, `rocky/rpms/rocky9/` — 시스템 RPM 자동 다운로드
+- `rocky/packages/rocky8/`, `rocky/packages/rocky9/` — Python wheel 자동 다운로드
+
+완료 후 `python-package/` 폴더 전체를 폐쇄망 서버에 복사합니다.
+
+#### Step 2. 폐쇄망 서버에서 설치
+
+```bash
+cd python-package/
 chmod +x install.sh && sudo ./install.sh
 ```
+
+OS(Rocky 8 / 9, Ubuntu 22 / 24)를 자동 감지하여 설치합니다.
+
+---
+
+> **Ubuntu의 경우** `download_docker.sh` 대신 `ubuntu/download.sh`를 인터넷 되는 Ubuntu 머신에서 실행하세요.
+
+---
 
 인터넷이 되는 환경에서는 pip로 직접 설치합니다.
 
@@ -86,8 +105,14 @@ tekton_pipeline_manager/
 │       └── ui.py                       ← 메뉴 렌더링, 입력 검증
 │
 ├── python-package/                     ← 오프라인 설치 패키지 모음
+│   ├── download_docker.sh              ← 인터넷 PC에서 실행 (Docker로 전체 다운로드)
+│   ├── install.sh                      ← 폐쇄망 서버에서 실행 (OS 자동 감지)
+│   ├── requirements.txt
 │   ├── ubuntu/  (debs/ + packages/)
-│   └── rocky/   (rpms/rocky8|9/ + packages/)
+│   └── rocky/
+│       ├── docker_inner.sh             ← download_docker.sh 내부 호출용 (직접 실행 X)
+│       ├── rpms/rocky8|9/              ← 시스템 RPM (자동 채워짐)
+│       └── packages/rocky8|9/          ← Python wheel (자동 채워짐)
 │
 └── result/                             ← 생성된 YAML 결과물 저장
 ```

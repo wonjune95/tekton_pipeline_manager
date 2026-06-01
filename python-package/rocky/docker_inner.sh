@@ -1,0 +1,53 @@
+#!/bin/bash
+# ════════════════════════════════════════════════════════════════
+#  컨테이너 내부에서 실행 — 직접 실행하지 마세요
+#  download_docker.sh 가 Docker 컨테이너 안에서 호출합니다
+# ════════════════════════════════════════════════════════════════
+
+set -euo pipefail
+
+VER="$1"          # 8 or 9
+RPM_DIR="/pkg/rocky/rpms/rocky${VER}"
+PKG_DIR="/pkg/rocky/packages/rocky${VER}"
+REQ_FILE="/pkg/requirements.txt"
+
+mkdir -p "$RPM_DIR" "$PKG_DIR"
+
+# Python 패키지명/명령어 결정
+if [ "$VER" = "8" ]; then
+    PYTHON_PKGS="python39 python39-pip"
+    PYTHON_CMD="python3.9"
+else
+    PYTHON_PKGS="python3 python3-pip"
+    PYTHON_CMD="python3"
+fi
+
+# ── [1/2] RPM 다운로드 ──────────────────────────────────────────
+echo ""
+echo "  [1/2] RPM 다운로드 (rocky${VER}) ..."
+
+# dnf download 명령에 필요한 플러그인 설치
+dnf install -y dnf-plugins-core 2>/dev/null
+
+# 패키지 본체 먼저 받기 (--resolve 없이 = 설치 여부 무관하게 반드시 받음)
+dnf download --destdir="$RPM_DIR" git $PYTHON_PKGS 2>/dev/null || true
+
+# 의존성 전체 받기
+dnf download --resolve --destdir="$RPM_DIR" git $PYTHON_PKGS 2>/dev/null || true
+
+RPM_COUNT=$(ls "$RPM_DIR" 2>/dev/null | wc -l)
+echo "      완료: RPM ${RPM_COUNT}개"
+
+# ── [2/2] Python wheel 다운로드 ─────────────────────────────────
+echo ""
+echo "  [2/2] Python wheel 다운로드 (rocky${VER}) ..."
+
+dnf install -y $PYTHON_PKGS 2>/dev/null
+
+$PYTHON_CMD -m pip download \
+    -r "$REQ_FILE" \
+    -d "$PKG_DIR" \
+    --prefer-binary
+
+WHL_COUNT=$(ls "$PKG_DIR" 2>/dev/null | wc -l)
+echo "      완료: WHL ${WHL_COUNT}개"
