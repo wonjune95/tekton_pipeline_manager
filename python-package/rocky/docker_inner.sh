@@ -13,27 +13,28 @@ REQ_FILE="/pkg/requirements.txt"
 
 mkdir -p "$RPM_DIR" "$PKG_DIR"
 
-# Python 패키지명/명령어 결정
+# ── [1/2] RPM 다운로드 ──────────────────────────────────────────
+echo ""
+echo "  [1/2] RPM 다운로드 (rocky${VER}) ..."
+
+dnf install -y dnf-plugins-core
+
 if [ "$VER" = "8" ]; then
     PYTHON_PKGS="python39 python39-pip"
     PYTHON_CMD="python3.9"
+
+    # Rocky 8의 python39는 AppStream 모듈에 있어서 먼저 활성화해야 함
+    dnf module enable python39:3.9 -y
 else
     PYTHON_PKGS="python3 python3-pip"
     PYTHON_CMD="python3"
 fi
 
-# ── [1/2] RPM 다운로드 ──────────────────────────────────────────
-echo ""
-echo "  [1/2] RPM 다운로드 (rocky${VER}) ..."
-
-# dnf download 명령에 필요한 플러그인 설치
-dnf install -y dnf-plugins-core 2>/dev/null
-
-# 패키지 본체 먼저 받기 (--resolve 없이 = 설치 여부 무관하게 반드시 받음)
-dnf download --destdir="$RPM_DIR" git $PYTHON_PKGS 2>/dev/null || true
+# 패키지 본체 먼저 받기 (설치 여부 무관하게 반드시 받음)
+dnf download --destdir="$RPM_DIR" git $PYTHON_PKGS || true
 
 # 의존성 전체 받기
-dnf download --resolve --destdir="$RPM_DIR" git $PYTHON_PKGS 2>/dev/null || true
+dnf download --resolve --destdir="$RPM_DIR" git $PYTHON_PKGS || true
 
 RPM_COUNT=$(ls "$RPM_DIR" 2>/dev/null | wc -l)
 echo "      완료: RPM ${RPM_COUNT}개"
@@ -42,7 +43,7 @@ echo "      완료: RPM ${RPM_COUNT}개"
 echo ""
 echo "  [2/2] Python wheel 다운로드 (rocky${VER}) ..."
 
-dnf install -y $PYTHON_PKGS 2>/dev/null
+dnf install -y $PYTHON_PKGS
 
 $PYTHON_CMD -m pip download \
     -r "$REQ_FILE" \

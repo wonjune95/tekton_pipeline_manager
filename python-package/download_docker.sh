@@ -57,8 +57,11 @@ echo "════════════════════════�
 echo "  폐쇄망 오프라인 패키지 다운로드 (Docker 사용)"
 echo "════════════════════════════════════════════════"
 
-run_rocky 8
-run_rocky 9
+# 인자 없으면 8, 9 모두 / 인자 있으면 해당 버전만  예) bash download_docker.sh 8
+VERSIONS="${*:-8 9}"
+for VER in $VERSIONS; do
+    run_rocky "$VER"
+done
 
 echo ""
 echo "════════════════════════════════════════════════"
