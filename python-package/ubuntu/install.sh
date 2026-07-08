@@ -16,7 +16,10 @@ UBUNTU_VER=$(grep '^VERSION_ID=' /etc/os-release 2>/dev/null | cut -d'=' -f2 | t
 
 # 버전별 debs 디렉토리 우선, 없으면 debs/ (레거시) 로 fallback
 DEB_DIR="$SCRIPT_DIR/debs/ubuntu${UBUNTU_VER}"
-if [ ! -d "$DEB_DIR" ] || [ -z "$(find "$DEB_DIR" -maxdepth 1 -name '*.deb' 2>/dev/null | head -1)" ]; then
+shopt -s nullglob
+_debs=("$DEB_DIR"/*.deb)
+shopt -u nullglob
+if [ ! -d "$DEB_DIR" ] || [ "${#_debs[@]}" -eq 0 ]; then
     DEB_DIR="$SCRIPT_DIR/debs"
 fi
 
@@ -29,11 +32,18 @@ echo ""
 # ── [1/2] 시스템 패키지 설치 (git, python3-pip) ──────
 echo "[1/2] 시스템 패키지 설치 ..."
 
-DEB_COUNT=$(find "$DEB_DIR" -maxdepth 1 -name '*.deb' 2>/dev/null | wc -l)
+shopt -s nullglob
+_debs=("$DEB_DIR"/*.deb)
+shopt -u nullglob
+DEB_COUNT=${#_debs[@]}
 if [ "$DEB_COUNT" -gt 0 ]; then
     echo "      경로   : $DEB_DIR ($DEB_COUNT개)"
+    # apt-get install -f 는 폐쇄망에서 부족한 의존성을 인터넷에서 받으려다
+    # 실패하면 "제거"로 문제를 해결해버릴 수 있어 사용하지 않는다.
+    # 대신 dpkg -i 를 반복 실행해 의존성 순서 문제를 자체적으로 해소한다.
     dpkg -i "$DEB_DIR"/*.deb 2>/dev/null || true
-    apt-get install -f -y 2>/dev/null || true
+    dpkg -i "$DEB_DIR"/*.deb 2>/dev/null || true
+    dpkg --configure -a 2>/dev/null || true
     echo "      git    : $(git --version 2>/dev/null || echo '확인 필요')"
     echo "      python3: $(python3 --version 2>/dev/null || echo '확인 필요')"
     echo "      pip    : $(python3 -m pip --version 2>/dev/null | cut -d' ' -f1-2 || echo '확인 필요')"
@@ -62,9 +72,12 @@ echo "[2/2] Python 패키지 오프라인 설치 ..."
 VERSIONED_PKG="$SCRIPT_DIR/packages/ubuntu${UBUNTU_VER}"
 COMMON_PKG="$SCRIPT_DIR/packages"
 PY_PKG_DIR=""
-if [ -d "$VERSIONED_PKG" ] && [ -n "$(find "$VERSIONED_PKG" -maxdepth 1 -name '*.whl' 2>/dev/null | head -1)" ]; then
+shopt -s nullglob
+_versioned_whls=("$VERSIONED_PKG"/*.whl) _common_whls=("$COMMON_PKG"/*.whl)
+shopt -u nullglob
+if [ -d "$VERSIONED_PKG" ] && [ "${#_versioned_whls[@]}" -gt 0 ]; then
     PY_PKG_DIR="$VERSIONED_PKG"
-elif [ -d "$COMMON_PKG" ] && [ -n "$(find "$COMMON_PKG" -maxdepth 1 -name '*.whl' 2>/dev/null | head -1)" ]; then
+elif [ -d "$COMMON_PKG" ] && [ "${#_common_whls[@]}" -gt 0 ]; then
     PY_PKG_DIR="$COMMON_PKG"
 else
     echo "[ERROR] packages/ 폴더가 없거나 비어 있습니다."
@@ -75,10 +88,22 @@ fi
 echo "      Python: $($PYTHON --version)"
 echo "      경로  : $PY_PKG_DIR"
 
-$PYTHON -m pip install \
-    --no-index \
-    --find-links "$PY_PKG_DIR" \
-    -r "$REQ_FILE"
+# PEP 668(externally-managed-environment)이 적용된 Python(Ubuntu 24.04+ 등)은
+# 시스템 전역 pip install을 기본적으로 거부한다. 감지되면 --break-system-packages
+# 로 재시도한다 (이 도구는 시스템 전용 유틸리티라 venv를 쓰지 않는다).
+PIP_ERR="$(mktemp)"
+if ! $PYTHON -m pip install --no-index --find-links "$PY_PKG_DIR" -r "$REQ_FILE" 2>"$PIP_ERR"; then
+    if grep -q "externally-managed-environment" "$PIP_ERR"; then
+        echo "      [INFO] PEP 668 environment 감지 — --break-system-packages 로 재시도"
+        $PYTHON -m pip install --no-index --break-system-packages \
+            --find-links "$PY_PKG_DIR" -r "$REQ_FILE"
+    else
+        cat "$PIP_ERR" >&2
+        rm -f "$PIP_ERR"
+        exit 1
+    fi
+fi
+rm -f "$PIP_ERR"
 
 # ── 결과 확인 ────────────────────────────────────────
 echo ""

@@ -121,9 +121,12 @@ echo "[2/2] Python 패키지 오프라인 설치 ..."
 VERSIONED_PKG="$SCRIPT_DIR/packages/rocky${ROCKY_VER}"
 COMMON_PKG="$SCRIPT_DIR/packages"
 PY_PKG_DIR=""
-if [ -d "$VERSIONED_PKG" ] && [ -n "$(find "$VERSIONED_PKG" -maxdepth 1 -name '*.whl' 2>/dev/null | head -1)" ]; then
+shopt -s nullglob
+VERSIONED_WHLS=("$VERSIONED_PKG"/*.whl) COMMON_WHLS=("$COMMON_PKG"/*.whl)
+shopt -u nullglob
+if [ -d "$VERSIONED_PKG" ] && [ "${#VERSIONED_WHLS[@]}" -gt 0 ]; then
     PY_PKG_DIR="$VERSIONED_PKG"
-elif [ -d "$COMMON_PKG" ] && [ -n "$(find "$COMMON_PKG" -maxdepth 1 -name '*.whl' 2>/dev/null | head -1)" ]; then
+elif [ -d "$COMMON_PKG" ] && [ "${#COMMON_WHLS[@]}" -gt 0 ]; then
     PY_PKG_DIR="$COMMON_PKG"
 else
     echo "[ERROR] packages/ 폴더가 없거나 비어 있습니다."
@@ -134,10 +137,21 @@ fi
 echo "      Python: $($PYTHON --version)"
 echo "      경로  : $PY_PKG_DIR"
 
-$PYTHON -m pip install \
-    --no-index \
-    --find-links "$PY_PKG_DIR" \
-    -r "$REQ_FILE"
+# PEP 668(externally-managed-environment) 적용 Python일 경우 시스템 전역
+# pip install이 거부될 수 있어, 감지되면 --break-system-packages 로 재시도한다.
+PIP_ERR="$(mktemp)"
+if ! $PYTHON -m pip install --no-index --find-links "$PY_PKG_DIR" -r "$REQ_FILE" 2>"$PIP_ERR"; then
+    if grep -q "externally-managed-environment" "$PIP_ERR"; then
+        echo "      [INFO] PEP 668 environment 감지 — --break-system-packages 로 재시도"
+        $PYTHON -m pip install --no-index --break-system-packages \
+            --find-links "$PY_PKG_DIR" -r "$REQ_FILE"
+    else
+        cat "$PIP_ERR" >&2
+        rm -f "$PIP_ERR"
+        exit 1
+    fi
+fi
+rm -f "$PIP_ERR"
 
 # ── 결과 확인 ────────────────────────────────────────
 echo ""

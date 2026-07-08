@@ -131,7 +131,10 @@ install_rocky_system_pkgs() {
     fi
 
     local rpm_count
-    rpm_count=$(find "$rpm_dir" -maxdepth 1 -name '*.rpm' 2>/dev/null | wc -l)
+    shopt -s nullglob
+    local rpm_files=("$rpm_dir"/*.rpm)
+    shopt -u nullglob
+    rpm_count=${#rpm_files[@]}
 
     if [ "$rpm_count" -eq 0 ]; then
         echo "      [WARN] rocky${OS_VER}/ 폴더가 비어 있습니다 — 시스템 패키지 건너뜀"
@@ -167,7 +170,10 @@ install_ubuntu_system_pkgs() {
     fi
 
     local deb_count
-    deb_count=$(find "$deb_dir" -maxdepth 1 -name '*.deb' 2>/dev/null | wc -l)
+    shopt -s nullglob
+    local deb_files=("$deb_dir"/*.deb)
+    shopt -u nullglob
+    deb_count=${#deb_files[@]}
 
     if [ "$deb_count" -eq 0 ]; then
         echo "      [WARN] ubuntu${OS_VER}/ 폴더가 비어 있습니다 — 시스템 패키지 건너뜀"
@@ -176,8 +182,12 @@ install_ubuntu_system_pkgs() {
     fi
 
     echo "      경로 : $deb_dir ($deb_count개)"
+    # apt-get install -f 는 폐쇄망에서 부족한 의존성을 인터넷에서 받으려다
+    # 실패하면 "제거"로 문제를 해결해버릴 수 있어 사용하지 않는다.
+    # 대신 dpkg -i 를 반복 실행해 의존성 순서 문제를 자체적으로 해소한다.
     dpkg -i "$deb_dir"/*.deb 2>/dev/null || true
-    apt-get install -f -y 2>/dev/null || true
+    dpkg -i "$deb_dir"/*.deb 2>/dev/null || true
+    dpkg --configure -a 2>/dev/null || true
 
     echo "      git   : $(git --version 2>/dev/null || echo '확인 필요')"
     echo "      python: $(python3 --version 2>/dev/null || echo '확인 필요')"
@@ -203,9 +213,12 @@ install_python_pkgs() {
             ;;
     esac
 
-    if [ -d "$versioned_dir" ] && [ -n "$(find "$versioned_dir" -maxdepth 1 -name '*.whl' 2>/dev/null | head -1)" ]; then
+    shopt -s nullglob
+    local versioned_whls=("$versioned_dir"/*.whl) common_whls=("$common_dir"/*.whl)
+    shopt -u nullglob
+    if [ -d "$versioned_dir" ] && [ "${#versioned_whls[@]}" -gt 0 ]; then
         PY_PKG_DIR="$versioned_dir"
-    elif [ -d "$common_dir" ] && [ -n "$(find "$common_dir" -maxdepth 1 -name '*.whl' 2>/dev/null | head -1)" ]; then
+    elif [ -d "$common_dir" ] && [ "${#common_whls[@]}" -gt 0 ]; then
         PY_PKG_DIR="$common_dir"
     else
         echo "[ERROR] Python wheel 파일을 찾을 수 없습니다."
@@ -236,10 +249,23 @@ install_python_pkgs() {
         fi
     fi
 
-    "$PYTHON" -m pip install \
-        --no-index \
-        --find-links "$PY_PKG_DIR" \
-        -r "$REQ_FILE"
+    # PEP 668(externally-managed-environment)이 적용된 Python(Ubuntu 24.04+ 등)은
+    # 시스템 전역 pip install을 기본적으로 거부한다. 감지되면 --break-system-packages
+    # 로 재시도한다 (이 도구는 시스템 전용 유틸리티라 venv를 쓰지 않는다).
+    local pip_err
+    pip_err="$(mktemp)"
+    if ! "$PYTHON" -m pip install --no-index --find-links "$PY_PKG_DIR" -r "$REQ_FILE" 2>"$pip_err"; then
+        if grep -q "externally-managed-environment" "$pip_err"; then
+            echo "      [INFO] PEP 668 environment 감지 — --break-system-packages 로 재시도"
+            "$PYTHON" -m pip install --no-index --break-system-packages \
+                --find-links "$PY_PKG_DIR" -r "$REQ_FILE"
+        else
+            cat "$pip_err" >&2
+            rm -f "$pip_err"
+            exit 1
+        fi
+    fi
+    rm -f "$pip_err"
 }
 
 # ── 결과 출력 ────────────────────────────────────────────────

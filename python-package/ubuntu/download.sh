@@ -69,19 +69,29 @@ echo "      경로: $DEB_DIR (ubuntu${UBUNTU_VER})"
 
 sudo apt-get update -qq
 
-# 설치 여부와 무관하게 강제 다운로드 (--reinstall --download-only)
 # python3-distutils: Ubuntu 22 전용 (24+에서 제거됨)
-PKGS="git python3 python3-pip"
+PKGS="git python3 python3-pip ca-certificates openssh-client"
 if [ "$UBUNTU_VER" -le 22 ] 2>/dev/null; then
     PKGS="$PKGS python3-distutils"
 fi
-# shellcheck disable=SC2086
-sudo apt-get install --reinstall --download-only -y $PKGS 2>/dev/null || true
 
-# /var/cache/apt/archives/ 에서 복사
-sudo cp -n /var/cache/apt/archives/*.deb "$DEB_DIR/" 2>/dev/null || true
-sudo chown "$(id -u):$(id -g)" "$DEB_DIR"/*.deb 2>/dev/null || true
-DEB_COUNT=$(ls "$DEB_DIR" 2>/dev/null | wc -l)
+# 이 다운로드 머신에 이미 설치되어 있는 의존 패키지는 apt가 재다운로드를
+# 건너뛰기 때문에, 단순히 "apt-get install --download-only $PKGS" 만으로는
+# 폐쇄망 대상 머신 기준 완전한 의존성 묶음이 되지 않을 수 있다.
+# Dir::State::status=/dev/null 로 "아무 것도 설치되어 있지 않다"고 가정시켜
+# apt 자체 solver가 전체 의존성을 처음부터 다시 계산하게 한다.
+# (apt-cache depends --recurse 는 OR 대안 패키지를 전부 나열해 서로 충돌하는
+#  패키지가 섞여 들어가므로 사용하지 않는다.)
+mkdir -p "$DEB_DIR/partial"
+# shellcheck disable=SC2086
+sudo apt-get install --reinstall --no-install-recommends --download-only -y \
+    -o Dir::State::status=/dev/null \
+    -o Dir::Cache::archives="$DEB_DIR" \
+    $PKGS
+
+sudo chown -R "$(id -u):$(id -g)" "$DEB_DIR"
+rm -rf "$DEB_DIR/partial"
+DEB_COUNT=$(ls "$DEB_DIR"/*.deb 2>/dev/null | wc -l)
 echo "      완료: ${DEB_COUNT}개 파일"
 
 # ── 결과 요약 ────────────────────────────────────────
