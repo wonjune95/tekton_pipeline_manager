@@ -15,3 +15,5 @@ result/
 
 # Claude Code 내부 디렉토리
 .claude/
+.agent/
+.bridge
