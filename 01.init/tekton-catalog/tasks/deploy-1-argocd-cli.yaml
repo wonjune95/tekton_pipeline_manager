@@ -1,0 +1,44 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  annotations:
+    tekton.dev/categories: CLI
+    tekton.dev/displayName: argocd-cli
+    tekton.dev/pipelines.minVersion: 0.12.1
+    tekton.dev/platforms: linux/amd64
+    tekton.dev/tags: cli
+  labels:
+    app.kubernetes.io/version: "0.1.1"
+    hub.tekton.dev/catalog: tekton
+  name: argocd-cli
+  namespace: tekton-catalog
+spec:
+  description: |-
+    This task is the generic argocd CLI task which can be used to run
+    all kinds of argocd commands
+  params:
+  - default: quay.io/argoproj/argocd:v2.12.3
+    name: IMAGE
+    type: string
+  - default: |
+      argocd help
+    description: The argocd script to run.
+    name: SCRIPT
+    type: string
+  - description: The argocd env secret
+    name: SECRET
+    type: string
+  stepTemplate:
+    computeResources: {}
+    envFrom:
+    - secretRef:
+        name: $(params.SECRET)
+  steps:
+  - computeResources: {}
+    env:
+    - name: TZ
+      value: Asia/Seoul
+    image: $(params.IMAGE)
+    name: argocd
+    script: |
+      $(params.SCRIPT)
