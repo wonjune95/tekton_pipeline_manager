@@ -7,11 +7,12 @@ metadata:
   namespace: tekton-pipelines
   labels:
     app: tekton-dashboard-auth
+    #app: tekton-dashboard-auth-oidc
 type: Opaque
 stringData:
   # [gitea] 사이트관리 > Admin Settings > Integrations
   # Application Name : tekton-dashboard-auth
-  # Redirect URIs: {{tekton_domain}}/oauth2/callback
+  # Redirect URIs: https://tekton.{{nnd_domain_name}}/oauth2/callback
   client_id: {{oauth_client_id}}
   client_secret: {{oauth_client_secret}}
 ---
@@ -26,33 +27,30 @@ metadata:
 data:
   oauth2_proxy_gitea.cfg: |
     ## https://oauth2-proxy.github.io/oauth2-proxy/configuration/overview
-    ## traefik ForwardAuth 방식: upstreams 없이 인증 판정(/oauth2/auth)만 담당
+    ## https://github.com/oauth2-proxy/oauth2-proxy/blob/master/contrib/local-environment/oauth2-proxy-gitea.cfg
 
     http_address="0.0.0.0:4180"
     cookie_secret="OQINaROshtE9TcZkNAm-5Zs2Pv3xaWytBmc5W7sPX7w=" # openssl rand -base64 32 | tr -- '+/' '-_'
     email_domains=["*"]
-    cookie_secure=false # https(websecure 리스너) 사용 시 true로 변경
-    cookie_name="_tekton_oauth2"
-    reverse_proxy=true
+    cookie_secure=true
+    upstreams="{{tekton_domain}}"
+    cookie_domains=[".{{nnd_domain_name}}"] # Required so cookie can be read on all subdomains.
+    whitelist_domains=[".{{nnd_domain_name}}"] # Required to allow redirection back to original requested target.
 
     redirect_url="{{tekton_domain}}/oauth2/callback"
 
     ## OpenID Connect Provider
     ## https://docs.gitea.com/development/oauth2-provider
-    ## 주의: 끝의 슬래시(/) 필수 - Gitea discovery 문서의 issuer(ROOT_URL 기준)와 문자열 완전 일치해야 함
-    oidc_issuer_url="{{gitea_domain}}/"
-
+    ## https://oauth2-proxy.github.io/oauth2-proxy/configuration/providers/openid_connect
     provider="oidc"
     provider_display_name="Gitea OIDC"
+    oidc_issuer_url="{{gitea_domain}}/"
     code_challenge_method="S256"
     set_xauthrequest=true
     ssl_insecure_skip_verify=true
-
-    cookie_samesite="lax"
+    
+    cookie_samesite="none"
     cookie_expire="0"
-    whitelist_domains=[".{{nnd_domain_name}}"] # 인증 후 원래 요청 주소로 리다이렉트 허용
-
-    pass_user_headers=true
 ---
 # oauth2-proxy 배포
 apiVersion: apps/v1
@@ -94,6 +92,7 @@ spec:
             drop:
             - ALL
           runAsNonRoot: true
+          #runAsUser: 1000
           seccompProfile:
             type: RuntimeDefault
         ports:
@@ -135,88 +134,81 @@ spec:
   selector:
     app: tekton-dashboard-auth
 ---
-# traefik ForwardAuth 미들웨어 (nginx auth-url 어노테이션 대체)
-# 인증 성공 시 oauth2-proxy가 내려주는 X-Auth-Request-* 헤더를 백엔드로 전달
-apiVersion: traefik.io/v1alpha1
-kind: Middleware
+apiVersion: networking.k8s.io/v1
+kind: Ingress
 metadata:
-  name: tekton-oauth2-auth
+  annotations:
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    # Gitea OpenID Connect 연동시 추가 설정
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
+    nginx.ingress.kubernetes.io/proxy-buffers: "4 32k"
+    nginx.ingress.kubernetes.io/proxy-busy-buffers-size: "64k"
+    nginx.ingress.kubernetes.io/large-client-header-buffers: "4 16k"
+  name: ing-oauth2-proxy
   namespace: tekton-pipelines
+  labels:
+    app: tekton-dashboard-auth
 spec:
-  forwardAuth:
-    address: http://oauth2-proxy.tekton-pipelines.svc.cluster.local:4180/oauth2/auth
-    trustForwardHeader: true
-    authResponseHeaders:
-      - X-Auth-Request-User
-      - X-Auth-Request-Email
-      - X-Auth-Request-Preferred-Username
-      - X-Auth-Request-Groups
----
-# 미인증(401-403) 시 로그인 화면으로 유도 (nginx auth-signin 어노테이션 대체)
-apiVersion: traefik.io/v1alpha1
-kind: Middleware
-metadata:
-  name: tekton-oauth2-errors
-  namespace: tekton-pipelines
-spec:
-  errors:
-    status:
-      - "401-403"
-    service:
-      name: oauth2-proxy
-      port: 4180
-    query: "/oauth2/sign_in"
----
-# oauth2-proxy 경로 라우팅 (/oauth2/*)
-# parentRefs는 traefik 설치 시 만든 Gateway 이름/네임스페이스와 일치해야 함
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
-metadata:
-  name: oauth2-route
-  namespace: tekton-pipelines
-spec:
-  parentRefs:
-    - name: traefik-gateway
-      namespace: traefik
-  hostnames:
-    - {{tekton_host_url}}
+  ingressClassName: nginx
   rules:
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /oauth2
-      backendRefs:
-        - name: oauth2-proxy
-          port: 4180
+  - host: {{tekton_host_url}}
+    http:
+      paths:
+      - backend:
+          service:
+            name: oauth2-proxy
+            port:
+              name: http
+        path: /oauth2
+        pathType: Prefix
+  tls:
+  - hosts:
+    - {{tekton_host_url}}
+    secretName: tekton-ssl
 ---
-# tekton dashboard 라우팅 - oauth2 미들웨어 적용
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
+# tekton ingress에 oauht2관련 설정 추가
+# 10.10.10.1 oauth.nip.io
+# subpath 형식과 prefix 형식은 구분되어서 작성되어야 함
+# rewrite, path, host 정보가 변경됨
+apiVersion: networking.k8s.io/v1
+kind: Ingress
 metadata:
-  name: tekton-route
+  annotations:
+    nginx.ingress.kubernetes.io/force-ssl-redirect: 'true'
+    nginx.ingress.kubernetes.io/auth-url: http://oauth2-proxy.tekton-pipelines.svc.cluster.local:4180/oauth2/auth # oauth2
+    nginx.ingress.kubernetes.io/auth-signin: https://$host/oauth2/sign_in?rd=$escaped_request_uri # oauth2
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      auth_request_set $user $upstream_http_x_auth_request_preferred_username;
+      auth_request_set $group $upstream_http_x_auth_request_groups;
+      proxy_set_header Impersonate-User $user;
+      access_by_lua_block {
+        local groups = ngx.var.group or ""
+        local ngx_req = require "ngx.req"
+        if groups ~= "" then
+          groups = groups .. ",tekton-dashboard-users"
+          for group in groups:gmatch("[^,]+") do
+            ngx_req.add_header("Impersonate-Group", group)
+          end
+        end
+      }    
+  name: ing-tekton
   namespace: tekton-pipelines
 spec:
-  parentRefs:
-    - name: traefik-gateway
-      namespace: traefik
-  hostnames:
-    - {{tekton_host_url}}
+  ingressClassName: nginx
   rules:
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /
-      filters:
-        - type: ExtensionRef
-          extensionRef:
-            group: traefik.io
-            kind: Middleware
-            name: tekton-oauth2-errors
-        - type: ExtensionRef
-          extensionRef:
-            group: traefik.io
-            kind: Middleware
-            name: tekton-oauth2-auth
-      backendRefs:
-        - name: tekton-dashboard
-          port: 9097
+  - host: {{tekton_host_url}}
+    http:
+      paths:
+      - backend:
+          service:
+            name: tekton-dashboard
+            port:
+              name: http
+              # number: 9097
+        path: /
+        # pathType: Prefix
+        pathType: ImplementationSpecific # oauth2
+  tls:
+    - hosts:
+      - {{tekton_host_url}}
+      secretName: tekton-ssl

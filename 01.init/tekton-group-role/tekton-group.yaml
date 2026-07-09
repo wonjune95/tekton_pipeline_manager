@@ -38,7 +38,7 @@ roleRef:
 subjects:
   - kind: Group
     apiGroup: rbac.authorization.k8s.io
-    name: gioauth_organization:viewers
+    name: oauth_organization:viewers
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 #kind: Role

@@ -5,6 +5,24 @@ import requests
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+def _redact_url(url):
+    # id:pw@host 형태의 credential 제거 (에러 메시지 노출 방지)
+    if '://' in url and '@' in url:
+        scheme, rest = url.split('://', 1)
+        return scheme + '://' + rest.split('@', 1)[-1]
+    return url
+
+def _post(name, url, headers, body):
+    """
+    접속 실패(DNS 해석 불가, 연결 거부, 타임아웃 등) 시 traceback 대신
+    실패한 컴포넌트와 주소를 출력하고 None을 반환한다.
+    """
+    try:
+        return requests.post(url, headers=headers, data=body, verify=False, timeout=15)
+    except requests.exceptions.RequestException as e:
+        print('\033[91m' + f'[{name}] 접속 실패: {_redact_url(url)} ({type(e).__name__}) - 주소·네트워크를 확인하세요.' + '\033[0m')
+        return None
+
 def create_registry(data):
     url = 'https://'+data["image_registry"]+'/api/v2.0/projects'
     headers = {'Content-Type':'application/json', 'Authorization':'Basic '+data['harbor_admin_auth'], 'X-Resource-Name-In-Location':'false'}
@@ -18,11 +36,13 @@ def create_registry(data):
     }
 
     payload["project_name"] = data["organization_name"]+"-dev"
-    r = requests.post(url, headers=headers, data=json.dumps(payload),verify=False)
+    r = _post('create_registry', url, headers, json.dumps(payload))
+    if r is None:
+        return
     payload["project_name"] = data["organization_name"]+"-stg"
-    r = requests.post(url, headers=headers, data=json.dumps(payload),verify=False)
+    r = _post('create_registry', url, headers, json.dumps(payload))
     payload["project_name"] = data["organization_name"]+"-prod"
-    r = requests.post(url, headers=headers, data=json.dumps(payload),verify=False)
+    r = _post('create_registry', url, headers, json.dumps(payload))
 
 def create_harbor_id(data):
     url = 'https://'+data['image_registry']+'/api/v2.0/users'
@@ -35,7 +55,9 @@ def create_harbor_id(data):
         "comment": data['harbor_id']
     }
 
-    r = requests.post(url, headers=headers, data=json.dumps(payload),verify=False)
+    r = _post('create_harbor_id', url, headers, json.dumps(payload))
+    if r is None:
+        return
     if r.status_code == 201:
         print("Harbor Id is successfully created")
     else:
@@ -54,7 +76,9 @@ def create_harbor_robot_id(data):
         ,"disable":False
         ,"level":"system"
     }
-    r = requests.post(url, headers=headers, data=json.dumps(payload),verify=False)
+    r = _post('create_harbor_robot_id', url, headers, json.dumps(payload))
+    if r is None:
+        return
 
     if r.status_code == 201:
         print("robot secret : " + r.json().get('secret'))
@@ -80,7 +104,9 @@ def create_nexus_id(data):
         "roles": ["nx-admin"]
     }
 
-    r = requests.post(url, headers=headers, data=json.dumps(payload),verify=False)
+    r = _post('create_nexus_id', url, headers, json.dumps(payload))
+    if r is None:
+        return
     if r.status_code == 200:
         print("Nexus Id is successfully created")
     else:
@@ -109,7 +135,9 @@ def create_nexus_maven_repository(data):
             "contentDisposition": "INLINE"
         }
     }
-    r = requests.post(url, headers=headers, data=json.dumps(payload),verify=False)
+    r = _post('create_nexus_maven_repository', url, headers, json.dumps(payload))
+    if r is None:
+        return
     if r.status_code == 201:
         print("MAVEN release, snapshot repository is successfully created")
     else:
@@ -117,7 +145,9 @@ def create_nexus_maven_repository(data):
 
     payload["name"] = "maven-default-release"
     payload["maven"]["versionPolicy"] = "RELEASE"
-    r = requests.post(url, headers=headers, data=json.dumps(payload),verify=False)
+    r = _post('create_nexus_maven_repository', url, headers, json.dumps(payload))
+    if r is None:
+        return
     if r.status_code == 201:
         print("MAVEN release, snapshot repository is successfully created")
     else:
@@ -125,12 +155,14 @@ def create_nexus_maven_repository(data):
 
     payload["name"] = "maven-default-snapshot"
     payload["maven"]["versionPolicy"] = "SNAPSHOT"
-    r = requests.post(url, headers=headers, data=json.dumps(payload),verify=False)
+    r = _post('create_nexus_maven_repository', url, headers, json.dumps(payload))
+    if r is None:
+        return
     if r.status_code == 201:
         print("MAVEN release, snapshot repository is successfully created")
     else:
         print("create_nexus_maven_repository(snapshot) : " +str(r))
-   
+
 def create_nexus_maven_group_repository(data):
     #url = 'https://'+data["nexus_admin_id"]+':'+data["nexus_admin_pw"]+'@'+data["nexus_host_url"]+'/service/rest/v1/repositories/maven/group'
     url = data['nexus_domain'].replace("://", '://'+data["nexus_admin_id"]+':'+data["nexus_admin_pw"]+'@')+'/service/rest/v1/repositories/maven/group'
@@ -151,7 +183,9 @@ def create_nexus_maven_group_repository(data):
             ]
             }
     }
-    r = requests.post(url, headers=headers, data=json.dumps(payload),verify=False)
+    r = _post('create_nexus_maven_group_repository', url, headers, json.dumps(payload))
+    if r is None:
+        return
     if r.status_code == 201:
         print("MAVEN group repository is successfully created")
     else:
@@ -173,7 +207,9 @@ def create_nexus_npm_repository(data):
             "proprietaryComponents": True
             }
     }
-    r = requests.post(url, headers=headers, data=json.dumps(payload),verify=False)
+    r = _post('create_nexus_npm_repository', url, headers, json.dumps(payload))
+    if r is None:
+        return
     if r.status_code == 201:
         print("NPM repository is successfully created")
     else:
@@ -195,7 +231,9 @@ def create_nexus_npm_group_repository(data):
             "memberNames": ["npm-default"]
             }
     }
-    r = requests.post(url, headers=headers, data=json.dumps(payload),verify=False)
+    r = _post('create_nexus_npm_group_repository', url, headers, json.dumps(payload))
+    if r is None:
+        return
     if r.status_code == 201:
         print("NPM group repository is successfully created")
     else:
@@ -217,7 +255,9 @@ def create_nexus_raw_repository(data):
                 "contentDisposition": "ATTACHMENT"
             }
     }
-    r = requests.post(url, headers=headers, data=json.dumps(payload),verify=False)
+    r = _post('create_nexus_raw_repository', url, headers, json.dumps(payload))
+    if r is None:
+        return
 
     if r.status_code == 201:
         print("RAW repository is successfully created")
@@ -242,7 +282,9 @@ def create_nexus_raw_group_repository(data):
             "contentDisposition": "ATTACHMENT"
             }
     }
-    r = requests.post(url, headers=headers, data=json.dumps(payload),verify=False)
+    r = _post('create_nexus_raw_group_repository', url, headers, json.dumps(payload))
+    if r is None:
+        return
 
     if r.status_code == 201:
         print("RAW group repository is successfully created")
@@ -256,10 +298,11 @@ def create_sonar_token(data):
         f"{data['sonar_admin_id']}:{data['sonar_admin_pw']}".encode()
     ).decode()
     headers = {'Content-Type':'application/x-www-form-urlencoded', 'Authorization':'Basic ' + sonar_admin_auth}
-    r = requests.post(url, headers=headers,
-                      data=f"name={data['sonar_id']}&login={data['sonar_admin_id']}&type=USER_TOKEN",
-                      verify=False)
-    
+    r = _post('create_sonar_token', url, headers,
+              f"name={data['sonar_id']}&login={data['sonar_admin_id']}&type=USER_TOKEN")
+    if r is None:
+        return
+
     if r.status_code == 200:
         print("sonar_token : " + r.json().get('token'))
         data['sonar_token'] = r.json().get('token')
@@ -270,7 +313,7 @@ def create_sonar_token(data):
 def get_organization(data):
     url = data["gitea_domain"]+'/api/v1/orgs'
     headers = {'Content-Type':'application/json', 'Authorization':'Basic '+data['git_cicd_auth'], 'Accept':'application/json'}
-    r = requests.get(url, headers=headers, verify=False)
+    r = requests.get(url, headers=headers, verify=False, timeout=15)
     r.raise_for_status()
     return r.text
 
@@ -280,7 +323,7 @@ get_oragnizaion = get_organization
 def get_repos_in_orgs(data):
     url = data["gitea_domain"]+'/api/v1/orgs/'+ data['organization_name']+'/repos'
     headers = {'Content-Type':'application/json', 'Authorization':'Basic '+data['git_cicd_auth'], 'Accept':'application/json'}
-    r = requests.get(url, headers=headers, verify=False)
+    r = requests.get(url, headers=headers, verify=False, timeout=15)
     r.raise_for_status()
     return r.text
 
@@ -296,7 +339,7 @@ def create_organization(data):
       "visibility": "private",
       "website": "https://nnd-cicd.injeinc.com"
     }
-    r = requests.post(url, headers=headers, data=json.dumps(payload),verify=False)
+    r = _post('create_organization', url, headers, json.dumps(payload))
 
 # 하위 호환 alias (오타 버전)
 create_oragnizaion = create_organization
@@ -313,13 +356,15 @@ def create_gitops(data):
       "private": True,
       "readme": "Default"
     }
-    r = requests.post(url, headers=headers, data=json.dumps(payload),verify=False)
+    r = _post('create_gitops', url, headers, json.dumps(payload))
+    if r is None:
+        return
     print("create_gitops : "+str(r))
 
 def create_gitea_user_id(data):
     #url = 'https://'+data["gitea_admin_id"]+':'+data["gitea_admin_pw"]+'@'+data["gitea_host_url"]+'/api/v1/admin/users'
     url = data['gitea_domain'].replace("://", '://'+data["gitea_admin_id"]+':'+data["gitea_admin_pw"]+'@')+'/api/v1/admin/users'
-    
+
     headers = {'Content-Type':'application/json'}
     payload = {
         "email": data['git_cicd_id']+"@cicdbot.com",
@@ -333,7 +378,9 @@ def create_gitea_user_id(data):
         "username": data['git_cicd_id']
     }
 
-    r = requests.post(url, headers=headers, data=json.dumps(payload),verify=False)
+    r = _post('create_gitea_user_id', url, headers, json.dumps(payload))
+    if r is None:
+        return
     if r.status_code == 201:
         print("Gitea Id is successfully created")
     else:
@@ -353,7 +400,9 @@ def create_gitea_oauth2(data):
         ]
     }
 
-    r = requests.post(url, headers=headers, data=json.dumps(payload),verify=False)
+    r = _post('create_gitea_oauth2', url, headers, json.dumps(payload))
+    if r is None:
+        return
     #data['oauth_client_id'] = r.json().get('client_id')
     #data['oauth_client_secret'] = r.json().get('client_secret')
 
