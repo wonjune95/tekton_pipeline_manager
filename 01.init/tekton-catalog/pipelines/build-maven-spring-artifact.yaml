@@ -221,7 +221,7 @@ spec:
     - name: SOURCE_TO_SCAN
       value: .
     - name: SONAR_SCANNER_IMAGE
-      value: "{{image_registry}}/nnd/tekton-cicd/sonar-scanner-cli:5.0.1"
+      value: "{{image_registry}}/nnd/tekton-cicd/sonar-scanner-cli:12.1"
     - name: SONAR_LOGIN_KEY
       value: login
     - name: SONAR_PASSWORD_KEY
