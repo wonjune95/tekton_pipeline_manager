@@ -74,7 +74,7 @@ def _api_base_from_host_url(host_url: str) -> str:
     else:
         scheme, rest = 'http', u  # 스킴 없으면 http 기본
     host = rest.split('/')[0]     # 첫 '/' 전까지 host:port
-    return f"{scheme}://{host}/gitea/api/v1"
+    return f"{scheme}://{host}/api/v1"
 
 # =========================
 # 메뉴
