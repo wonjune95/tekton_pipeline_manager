@@ -45,8 +45,8 @@ harbor_admin_pw   = "YOUR_HARBOR_ADMIN_PW"
 harbor_id         = "YOUR_HARBOR_USER_ID"
 harbor_pw         = "YOUR_HARBOR_USER_PW"
 harbor_robot_id   = "robot.regcred"
-harbor_robot_pw   = ""
-harbor_robot_auth = ""
+harbor_robot_pw   = "robot123!"
+harbor_robot_auth = "cm9ib3QucmVnY3JlZDpyb2JvdDEyMyE="
 
 
 # ════════════════════════════════════════════════════════
