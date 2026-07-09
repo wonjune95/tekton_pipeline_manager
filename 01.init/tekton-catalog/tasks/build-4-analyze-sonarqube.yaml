@@ -238,7 +238,7 @@ spec:
         fi
         if [[ -f $(workspaces.sonar-credentials.path)/$(params.SONAR_LOGIN_KEY) ]]; then
           SONAR_LOGIN=`cat $(workspaces.sonar-credentials.path)/$(params.SONAR_LOGIN_KEY)`
-          replaceValues $(workspaces.source.path)/$(params.CONTEXT_DIR)/sonar-project.properties sonar.login "${SONAR_LOGIN}"
+          replaceValues $(workspaces.source.path)/$(params.CONTEXT_DIR)/sonar-project.properties sonar.token "${SONAR_LOGIN}"
         fi
       fi
     workingDir: $(workspaces.source.path)/$(params.CONTEXT_DIR)

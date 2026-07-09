@@ -11,7 +11,7 @@ from menu.util.component_api import get_oragnizaion as get_organization
 from menu.util.ui import draw_menu, safe_prompt, validate_k8s_name
 
 def _load_private_key(pem_path):
-    for key_cls in (paramiko.RSAKey, paramiko.ECDSAKey, paramiko.Ed25519Key, paramiko.DSSKey):
+    for key_cls in (paramiko.RSAKey, paramiko.ECDSAKey, paramiko.Ed25519Key):
         try:
             return key_cls.from_private_key_file(pem_path)
         except paramiko.SSHException:

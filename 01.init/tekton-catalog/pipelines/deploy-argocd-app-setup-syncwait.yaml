@@ -115,7 +115,7 @@ spec:
     name: argocd-appsetup
     params:
     - name: IMAGE
-      value: "{{image_registry}}/nnd/tekton-cicd/argocd:v2.11.3"
+      value: "{{image_registry}}/nnd/tekton-cicd/argocd:v2.12.3"
     - name: SCRIPT
       value: |
         argocd login "$ARGOCD_SERVER" $ARGOCD_OPTS --username="$ARGOCD_USERNAME" --password="$ARGOCD_PASSWORD"
@@ -147,7 +147,7 @@ spec:
       - "false"
     params:
     - name: IMAGE
-      value: "{{image_registry}}/nnd/tekton-cicd/argocd:v2.11.3"
+      value: "{{image_registry}}/nnd/tekton-cicd/argocd:v2.12.3"
     - name: SCRIPT
       value: |
         argocd login "$ARGOCD_SERVER" $ARGOCD_OPTS --username="$ARGOCD_USERNAME" --password="$ARGOCD_PASSWORD"
