@@ -6,7 +6,7 @@ metadata:
   name: oauth2-proxy-gitea
   namespace: tekton-pipelines
   labels:
-    app: tekton-dashboard-auth
+    app: oauth-all-in-one
 type: Opaque
 stringData:
   # [gitea] 사이트관리 > Admin Settings > Integrations
@@ -22,7 +22,7 @@ metadata:
   name: oauth2-proxy-gitea
   namespace: tekton-pipelines
   labels:
-    app: tekton-dashboard-auth
+    app: oauth-all-in-one
 data:
   oauth2_proxy_gitea.cfg: |
     ## https://oauth2-proxy.github.io/oauth2-proxy/configuration/overview
@@ -61,16 +61,16 @@ metadata:
   name: oauth2-proxy
   namespace: tekton-pipelines
   labels:
-    app: tekton-dashboard-auth
+    app: oauth-all-in-one
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: tekton-dashboard-auth
+      app: oauth-all-in-one
   template:
     metadata:
       labels:
-        app: tekton-dashboard-auth
+        app: oauth-all-in-one
     spec:
       containers:
       - image: {{image_registry}}/nnd/oauth2-proxy:v7.8.1
@@ -125,7 +125,7 @@ metadata:
   name: oauth2-proxy
   namespace: tekton-pipelines
   labels:
-    app: tekton-dashboard-auth
+    app: oauth-all-in-one
 spec:
   ports:
   - name: http
@@ -133,7 +133,7 @@ spec:
     protocol: TCP
     targetPort: 4180
   selector:
-    app: tekton-dashboard-auth
+    app: oauth-all-in-one
 ---
 # traefik ForwardAuth 미들웨어 (nginx auth-url 어노테이션 대체)
 # 인증 성공 시 oauth2-proxy가 내려주는 X-Auth-Request-* 헤더를 백엔드로 전달
