@@ -44,7 +44,7 @@ data:
         }
 
         #location /api {
-        #  proxy_pass {{dev_backend_api_url}};
+        #  proxy_pass {{stg_backend_api_url}};
         #  proxy_set_header Origin '';
         #  proxy_set_header Referer '';
         #}

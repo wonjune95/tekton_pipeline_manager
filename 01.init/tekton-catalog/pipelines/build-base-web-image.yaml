@@ -135,7 +135,7 @@ spec:
       value: |
         FROM {{image_registry}}/nnd/tekton-cicd/httpd:$(params.apache-version)
         ENV TZ=Asia/Seoul
-        ADD {{nexus_domain}}/repository/raw-default-group/debian/pool/main/a/authbind/authbind_2.1.3_amd64.deb /authbind.deb
+        ADD {{nexus_host_url_rawfile_internal}}/debian/pool/main/a/authbind/authbind_2.1.3_amd64.deb /authbind.deb
         RUN dpkg -i /authbind.deb && rm /authbind.deb
         ARG APACHE_PATH=/usr/local/apache2
         RUN rm -rf $APACHE_PATH/manual/ $APACHE_PATH/cgi-bin/

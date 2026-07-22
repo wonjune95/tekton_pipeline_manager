@@ -9,7 +9,7 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-  - host: {{application_name}}.{{prod_frontend_domain_name}}
+  - host: {{application_name}}.{{stg_frontend_domain_name}}
     http:
       paths:
       - backend:
@@ -21,5 +21,5 @@ spec:
         pathType: Prefix
   tls:
   - hosts:
-    - {{application_name}}.{{prod_frontend_domain_name}}
+    - {{application_name}}.{{stg_frontend_domain_name}}
     secretName: secret-tls

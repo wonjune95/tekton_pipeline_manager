@@ -55,10 +55,10 @@ metadata:
 type: Opaque
 stringData:
   .gitconfig: |
-    [credential "{{gitea_host_urll}}"]
+    [credential "{{gitea_domain}}"]
       helper = store
   .git-credentials: |
-    http://{{git_cicd_id}}:{{git_cicd_pw}}@{{gitea_host_url}}
+    https://{{git_cicd_id}}:{{git_cicd_pw}}@{{gitea_host_url}}
 ---
 # 소나큐브 인증정보
 apiVersion: v1
@@ -99,7 +99,7 @@ type: Opaque
 stringData:
   .npmrc:  |-
     cache=/workspace/npm-local-cache
-    registry={{nexus_domain}}/repository/npm-default-group
+    registry={{nexus_host_url_internal}}/repository/npm-default-group
     audit=false
   settings.xml: |-
     <?xml version="1.0" encoding="UTF-8"?>
@@ -117,7 +117,7 @@ stringData:
         <mirror>
           <id>Nexus</id>
           <name>Nexus Private Mirror</name>
-          <url>{{nexus_domain}}/repository/maven-default-group</url>
+          <url>{{nexus_host_url_internal}}/repository/maven-default-group</url>
           <mirrorOf>*</mirrorOf>
         </mirror>
       </mirrors>
@@ -128,7 +128,7 @@ stringData:
             repositories {
                 maven {
                     allowInsecureProtocol=true 
-                    url '{{nexus_domain}}/repository/maven-default-group'
+                    url '{{nexus_host_url_internal}}/repository/maven-default-group'
                 }
             }
         }
@@ -153,7 +153,7 @@ stringData:
         repositories {
             maven {
                 allowInsecureProtocol=true 
-                url '{{nexus_domain}}/repository/maven-default-group'
+                url '{{nexus_host_url_internal}}/repository/maven-default-group'
             }
         }
         tasks.withType(Jar).matching { it.name == 'jar' }.configureEach {

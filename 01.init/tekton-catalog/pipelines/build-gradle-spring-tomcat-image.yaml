@@ -250,7 +250,7 @@ spec:
     - name: CONTEXT_DIR
       value: $(params.working-pr-dir)/$(params.code-repo-name)
     - name: SONAR_HOST_URL
-      value: "{{sonar_domain}}"
+      value: "{{sonar_host_url_internal}}"
     - name: SONAR_PROJECT_KEY
       value: $(params.code-repo-name)
     - name: PROJECT_VERSION

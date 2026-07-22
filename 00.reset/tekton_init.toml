@@ -40,6 +40,9 @@ oauth_client_secret = ""
 # ════════════════════════════════════════════════════════
 image_registry    = "YOUR_HARBOR_HOST:PORT"
 harbor_ca         = ""
+gitea_ca          = ""                                # Gitea 자체서명 CA. argocd-tls-certs-cm(01.init/argocd/argocd.yaml)에서 사용.
+                                                      # ArgoCD repo-server가 GitOps 저장소를 https로 clone할 때 신뢰할 CA로,
+                                                      # gitea와 harbor가 같은 CA면 비워두고 harbor_ca를 참조하도록 바꿔도 된다.
 harbor_admin_id   = "admin"
 harbor_admin_pw   = "YOUR_HARBOR_ADMIN_PW"
 harbor_id         = "YOUR_HARBOR_USER_ID"
@@ -102,8 +105,6 @@ gitea_host_url   = "YOUR_CLUSTER_IP.nip.io/gitea"
 sonar_domain     = "http://YOUR_CLUSTER_IP:PORT"
 nexus_domain     = "http://YOUR_CLUSTER_IP:PORT/nexus"
 nexus_host_url   = "YOUR_CLUSTER_IP:PORT"
-nexus_npm_url    = "YOUR_CLUSTER_IP:PORT/repository/npm-default-group/"
-nexus_maven_url  = "YOUR_CLUSTER_IP:PORT/repository/maven-default-group/"
 nexus_raw_url    = "YOUR_CLUSTER_IP:PORT/repository/raw-default-group/"
 
 
@@ -113,8 +114,6 @@ nexus_raw_url    = "YOUR_CLUSTER_IP:PORT/repository/raw-default-group/"
 sonar_host_url_internal          = "http://sonarqube.devops-tools.svc:9000"
 nexus_host_url_internal          = "http://nexus-repository-manager.devops-tools.svc:8081"
 nexus_host_url_rawfile_internal  = "http://nexus-repository-manager.devops-tools.svc:8081/repository/raw-default-group"
-gitea_host_url_internal          = "http://gitea-service.devops-tools.svc:3000"
-gitea_host_internal              = "gitea-service.devops-tools.svc:3000"
 
 
 # ════════════════════════════════════════════════════════
@@ -160,6 +159,7 @@ stg_frontend_domain_name  = "YOUR_STG_FRONTEND_IP.nip.io"
 prod_backend_domain_name  = "YOUR_PROD_BACKEND_IP.nip.io"
 prod_frontend_domain_name = "YOUR_PROD_FRONTEND_IP.nip.io"
 dev_backend_api_url  = "http://sample-backend.YOUR_DEV_BACKEND_IP.nip.io"
+stg_backend_api_url  = "http://sample-backend.YOUR_STG_BACKEND_IP.nip.io"
 prod_backend_api_url = "http://sample-backend.YOUR_PROD_BACKEND_IP.nip.io"
 dev_lb_ip    = ""
 dev_lb_name  = ""
@@ -182,11 +182,9 @@ vm_ssh_public_key  = ""
 # ════════════════════════════════════════════════════════
 # 13. ND 클러스터 캐시 노드 (SSH 접속 정보)
 #
-#   pem 파일을 result/{project_name}/ 폴더에 복사 후 파일명 입력
 # ════════════════════════════════════════════════════════
 cicd_cache_node_ip       = "YOUR_CACHE_NODE_IP"       # 복수: "1.1.1.1,2.2.2.2"
 cicd_cache_node_id       = "YOUR_CACHE_NODE_USERNAME"
-cicd_cache_node_pem_file = "YOUR_PEM_FILENAME.pem"
 cicd_cache_node_port     = 22
 
 

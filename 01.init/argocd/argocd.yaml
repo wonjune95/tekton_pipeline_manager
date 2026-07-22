@@ -17,8 +17,30 @@ data:
   accounts.cicdbot: apiKey, login
   accounts.cicdbot.enabled: "true"
 
+  # Gitea가 사내 자체 CA(자체서명)로 TLS 인증서를 발급받아서, 검증을 끔
+  oidc.tls.insecure.skip.verify: "true"
+
   # Gitea OIDC 적용
   url: {{argocd_domain}}
+
+  # 로그인 후 "돌아갈 주소"로 허용할 목록.
+  #
+  # SSO 로그인 버튼을 누르면 브라우저가 argocd로 이렇게 요청한다.
+  #   /auth/login?return_url=<로그인 끝나고 돌아올 주소>
+  # argocd는 이 주소가 위 url 값과 완전히 똑같은지(https인지, 호스트가 같은지) 검사하고,
+  # 다르면 로그인을 막고 이 에러를 띄운다.
+  #   "Invalid redirect URL: the protocol and host (including port) must match ..."
+  #
+  # 문제는 브라우저가 항상 전체 주소를 보내지는 않는다는 것.
+  # "/applications" 같은 짧은 형태나 http:// 로 보낼 때가 있는데, 그러면 검사에 걸려서 로그인이 안 된다.
+  # 아래 두 줄이 그 경우까지 허용해준다.
+  #   - "/"            : "/applications" 처럼 앞부분 없이 오는 주소 허용
+  #   - http://<호스트> : https가 아니라 http로 접속한 경우 허용
+  #
+  # 외부 사이트로 튕겨보내는 공격(//evil.com)은 여기에 걸리지 않으니 그대로 차단된다.
+  additionalUrls: |
+    - "/"
+    - "http://{{argocd_host_url}}"
   oidc.config: |
     name: Gitea
     issuer: {{gitea_domain}}
@@ -66,3 +88,18 @@ data:
     p, role:sample-dev-admin, applications, get, sample-dev/*, allow    # 상세 조회 허용
     p, role:sample-dev-admin, applications, list, sample-dev/*, allow   # 목록 보기 허용
     p, role:sample-dev-admin, applications, watch, sample-dev/*, allow  # 실시간 감시 허용
+---
+# argocd repo-server가 GitOps 저장소(Gitea)에 https로 접속할 때 신뢰할 CA
+# (oidc.tls.insecure.skip.verify는 로그인/OIDC 경로만 커버, repo-server의 git clone은 별도 경로라 여기서 따로 등록 필요)
+# gitea가 harbor와 동일한 CA/도메인을 쓴다면 gitea_ca 대신 harbor_ca를 참조하도록 바꿔도 된다.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/name: argocd-tls-certs-cm
+    app.kubernetes.io/part-of: argocd
+  name: argocd-tls-certs-cm
+  namespace: devops-tools
+data:
+  {{gitea_host_url}}: |
+    {{gitea_ca|indent(4)}}

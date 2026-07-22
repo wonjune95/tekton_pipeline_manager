@@ -9,7 +9,7 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-  - host: {{application_name}}.{{dev_backend_domain_name}}
+  - host: {{application_name}}.{{prod_backend_domain_name}}
     http:
       paths:
       - backend:

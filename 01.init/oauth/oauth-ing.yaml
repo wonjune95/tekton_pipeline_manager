@@ -39,8 +39,8 @@ data:
 
     ## OpenID Connect Provider
     ## https://docs.gitea.com/development/oauth2-provider
-    ## 주의: 끝의 슬래시(/) 필수 - Gitea discovery 문서의 issuer(ROOT_URL 기준)와 문자열 완전 일치해야 함
-    oidc_issuer_url="{{gitea_domain}}/"
+    ## 주의: Gitea(1.26.4 기준) discovery 문서의 issuer는 슬래시(/) 없이 내려옴 - 트레일링 슬래시 붙이면 issuer mismatch 에러 발생
+    oidc_issuer_url="{{gitea_domain}}"
 
     provider="oidc"
     provider_display_name="Gitea OIDC"
@@ -189,6 +189,17 @@ spec:
         - name: oauth2-proxy
           port: 4180
 ---
+# http -> https 강제 리다이렉트 미들웨어
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-to-https
+  namespace: tekton-pipelines
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
 # tekton dashboard 라우팅 - oauth2 미들웨어 적용
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -207,6 +218,11 @@ spec:
             type: PathPrefix
             value: /
       filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: redirect-to-https
         - type: ExtensionRef
           extensionRef:
             group: traefik.io
