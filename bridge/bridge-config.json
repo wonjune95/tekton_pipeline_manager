@@ -1,8 +1,0 @@
-{
-  "gemini": {
-    "mode": "file-bridge"
-  },
-  "codex": {
-    "mode": "file-bridge"
-  }
-}
