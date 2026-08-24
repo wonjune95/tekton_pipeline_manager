@@ -9,7 +9,20 @@ metadata:
   namespace: {{organization_name}}-cicd
 spec:
   namespaceSelector: {}
-  resources: {}
+  resources:
+    kubernetesResource:
+      spec:
+        template:
+          spec:
+            affinity:
+              nodeAffinity:
+                requiredDuringSchedulingIgnoredDuringExecution:
+                  nodeSelectorTerms:
+                  - matchExpressions:
+                    - key: nodegroup
+                      operator: NotIn
+                      values: 
+                      - {{node_group|default('tekton-build')}}
   serviceAccountName: cicdbot
   triggers:
   - name: gitea
