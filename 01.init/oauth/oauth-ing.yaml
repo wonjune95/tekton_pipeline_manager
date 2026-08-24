@@ -107,12 +107,10 @@ spec:
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
             - matchExpressions:
-              - key: kubernetes.io/hostname
+              - key: nodegroup
                 operator: In
                 values:
-{%- for node in node_selector_list %}
-                - {{node}}
-{%- endfor %}
+                - {{node_group|default('tekton-build')}}
       volumes:
       - name: config
         configMap:

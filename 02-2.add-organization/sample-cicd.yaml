@@ -89,7 +89,7 @@ stringData:
         }
     }
 ---
-# 넥서스 인증정보 (maven, gradle, npm 글로벌 설정 포함)
+# 넥서스 인증정보 (maven, gradle, npm, pip 글로벌 설정 포함)
 apiVersion: v1
 kind: Secret
 metadata:
@@ -101,6 +101,18 @@ stringData:
     cache=/workspace/npm-local-cache
     registry={{nexus_host_url_internal}}/repository/npm-default-group
     audit=false
+  pip.conf: |-
+    [global]
+    # pip 는 PEP 503 simple index 를 읽으므로 group repo 뒤에 /simple 이 붙는다. (npm/maven 과 경로 규칙이 다름)
+    index-url = {{nexus_host_url_internal}}/repository/pypi-default-group/simple
+    trusted-host = {{nexus_host_url}}
+  .pypirc: |-
+    [distutils]
+    index-servers = nexus
+    [nexus]
+    repository = {{nexus_host_url_internal}}/repository/pypi-hosted/
+    username = {{nexus_id}}
+    password = {{nexus_pw}}
   settings.xml: |-
     <?xml version="1.0" encoding="UTF-8"?>
     <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
@@ -156,8 +168,9 @@ stringData:
                 url '{{nexus_host_url_internal}}/repository/maven-default-group'
             }
         }
+        // 부트앱은 bootJar 만 쓰므로 plain jar 를 끈다. 라이브러리 빌드는 -PlibraryBuild 로 되살린다.
         tasks.withType(Jar).matching { it.name == 'jar' }.configureEach {
-            enabled = false
+            enabled = project.hasProperty('libraryBuild')
         }
         tasks.withType(Copy).matching { it.name == 'processResources' }.configureEach {
             duplicatesStrategy = org.gradle.api.file.DuplicatesStrategy.INCLUDE

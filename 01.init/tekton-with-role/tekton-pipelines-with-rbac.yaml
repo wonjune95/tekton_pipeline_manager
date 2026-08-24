@@ -63,11 +63,13 @@ data:
         requiredDuringSchedulingIgnoredDuringExecution:
           nodeSelectorTerms:
           - matchExpressions:
-            - key: kubernetes.io/hostname
+            # 노드 개별 지정 대신 노드 그룹 라벨로 선택한다.
+            #   kubectl label node <노드명> nodegroup={{node_group|default('tekton-build')}}
+            # 노드를 늘릴 때는 라벨만 붙이면 되지만, cicd-local-sc / cicd-store-sc 용
+            # /CICD-DATA 디렉토리 준비가 같이 되어야 파드가 PVC 를 붙일 수 있다.
+            - key: nodegroup
               operator: In
               values:
-{%- for node in node_selector_list %}
-              - {{node}}
-{%- endfor %}
+              - {{node_group|default('tekton-build')}}
     securityContext:
       fsGroup: 65532

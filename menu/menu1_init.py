@@ -15,7 +15,7 @@ from menu.util.ui import draw_menu, safe_prompt
 
 # 필수 항목 및 기본값(플레이스홀더) 정의
 _REQUIRED_FIELDS = [
-    'project_name', 'nks_master_server', 'node_selector', 'nnd_cluster_name',
+    'project_name', 'nks_master_server', 'node_group', 'nnd_cluster_name',
     'nnd_domain_name', 'gitea_domain', 'gitea_host_url',
     'image_registry',
     'nexus_domain',
@@ -39,7 +39,7 @@ def validate_config(data: dict) -> bool:
 
 _MENU1_NOTES = [
     '아래의 값들을 ./00.reset/tekton_init.toml 에 작성바랍니다.',
-    '- node_selector        : ND 컴포넌트가 실행될 노드  ※ 여러 노드: "worker-0,worker-1"',
+    '- node_group           : ND 컴포넌트가 실행될 노드 그룹 라벨값 (노드에 nodegroup=<값> 라벨 필요)',
     '- cicd_cache_node_ip   : 캐시 노드 IP              ※ 여러 노드: "1.1.1.1,2.2.2.2"',
     '- nks_master_server    : nks 마스터서버 url',
     '- cicdbot_token        : 01.init 실행후 kubectl describe secret cicdbot token값을 반영',
@@ -74,7 +74,6 @@ def menu1():
     # add_b64('harbor_robot_id', 'harbor_robot_pw', 'harbor_robot_auth')
     add_b64('harbor_admin_id', 'harbor_admin_pw', 'harbor_admin_auth')
     add_b64('git_cicd_id', 'git_cicd_pw', 'git_cicd_auth')
-    data['node_selector_list'] = [n.strip() for n in str(data.get('node_selector', '')).split(',') if n.strip()]
 
     # --- 메뉴 반복 ---
     while True:

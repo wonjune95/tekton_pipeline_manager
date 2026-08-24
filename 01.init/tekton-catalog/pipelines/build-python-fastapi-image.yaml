@@ -1,20 +1,20 @@
 apiVersion: tekton.dev/v1
 kind: Pipeline
 metadata:
-  name: build-npm-nodejs-nginx-image
+  name: build-python-fastapi-image
   namespace: tekton-catalog
 spec:
   description: |
-    This Pipeline for npm build.
+    This Pipeline for python(fastapi) image build.
   params:
   - name: git-host-url
     default: "{{gitea_domain}}"
     type: string
   - name: code-repo-org
-    default: sample
+    default: fastapi
     type: string
   - name: code-repo-name
-    default: sample-frontend
+    default: fastapi-be-test
     type: string
   - name: code-repo-url
     description: Code Repository URL to clone from.
@@ -24,22 +24,35 @@ spec:
     description: Revision to checkout. (branch, tag, sha, ref, etc...)
     default: develop
     type: string
-  - name: node-version
-    default: "24.19.0"
+  - name: python-version
+    default: "3.13"
     type: string
-  - name: nginx-version
-    default: "1.30.4"
+  - name: requirements-file
+    default: requirements.txt
     type: string
-  - name: build-script
+  - name: test-packages
+    description: requirements 외에 테스트용으로 더 설치할 패키지.
+    default: pytest httpx
+    type: string
+  - name: test-script
     default: |
-      yarn install
-      yarn build -- --mode dev
+      pytest -q --junitxml=report/junit.xml
     type: string
-  - name: artifact-source
-    default: dist
+  - name: app-module
+    description: uvicorn 실행 대상. (flask/django 면 gunicorn 커맨드로 바꿔 쓴다)
+    default: app.main:app
     type: string
-  - name: artifact-target
-    default: /usr/share/nginx/html
+  - name: app-port
+    default: "8080"
+    type: string
+  - name: pip-index-url
+    default: "{{nexus_host_url_internal}}/repository/pypi-default-group/simple"
+    type: string
+  - name: pip-trusted-host
+    default: "{{nexus_host_url}}"
+    type: string
+  - name: skip-code-test
+    default: "false"
     type: string
   - name: skip-code-analysis
     default: "false"
@@ -130,18 +143,25 @@ spec:
       workspace: gitconfig
     - name: ssl-ca-directory
       workspace: ssl-ca-directory
-  - displayName: Code Build
-    name: code-build
+  - displayName: Code Test
+    name: code-test
+    when:
+    - input: $(params.skip-code-test)
+      operator: in
+      values:
+      - "false"
     params:
-    - name: BASH_IMAGE
-      value: "{{image_registry}}/nnd/tekton-cicd/bash:5.2.21"
-    - name: NODE_IMAGE
-      value: "{{image_registry}}/nnd/tekton-cicd/node:$(params.node-version)"
+    - name: PYTHON_IMAGE
+      value: "{{image_registry}}/nnd/baseimage/python:$(params.python-version)-slim"
     - name: CONTEXT_DIR
       value: $(params.working-pr-dir)/$(params.code-repo-name)
-    - name: NPM_COMMAND
+    - name: REQUIREMENTS_FILE
+      value: $(params.requirements-file)
+    - name: EXTRA_PACKAGES
+      value: $(params.test-packages)
+    - name: PYTHON_COMMAND
       value: |
-        $(params.build-script)
+        $(params.test-script)
     runAfter:
     - code-fetch
     taskRef:
@@ -150,7 +170,7 @@ spec:
       - name: kind
         value: task
       - name: name
-        value: npm
+        value: python
       - name: namespace
         value: tekton-catalog
       resolver: cluster
@@ -159,19 +179,13 @@ spec:
       workspace: shared-data
     - name: ssl-ca-directory
       workspace: ssl-ca-directory
-    - name: npmrc-settings
-      workspace: npmrc-settings
-    - name: npm-local-cache
-      workspace: npm-local-cache
-    - name: node_modules
-      workspace: node_modules
+    - name: pip-settings
+      workspace: pip-settings
+    - name: pip-local-cache
+      workspace: pip-local-cache
   - displayName: Code Analysis
     name: code-analysis
     when:
-    # - input: $(params.app-env)
-    #   operator: in
-    #   values:
-    #   - dev
     - input: $(params.skip-code-analysis)
       operator: in
       values:
@@ -186,7 +200,7 @@ spec:
     - name: PROJECT_VERSION
       value: $(tasks.code-fetch.results.commit)
     - name: SOURCE_TO_SCAN
-      value: src
+      value: .
     - name: SONAR_SCANNER_IMAGE
       value: "{{image_registry}}/nnd/tekton-cicd/sonar-scanner-cli:12.1"
     - name: SONAR_LOGIN_KEY
@@ -198,17 +212,17 @@ spec:
     - name: SONAR_LINKS_SCM
       value: $(params.code-repo-url)
     - name: SONAR_LANGUAGE
-      value: js
+      value: py
     - name: SONAR_INCLUSIONS
-      value: src/**/*.js
+      value: "**/*.py"
     - name: SONAR_EXCLUSIONS
-      value: node_modules/**,dist/**
+      value: "tests/**,**/__pycache__/**,.venv/**"
     - name: SONAR_PROP_IMAGE
       value: "{{image_registry}}/nnd/tekton-cicd/bash:5.2.21"
     - name: SONAR_BRANCH_NAME
       value: $(params.code-revision)
     runAfter:
-    - code-build
+    - code-test
     taskRef:
       kind: Task
       params:
@@ -240,30 +254,28 @@ spec:
       value: $(params.working-pr-dir)/$(params.code-repo-name)/$(params.path-to-dockerfile)
     - name: contents
       value: |
-        FROM {{image_registry}}/nnd/tekton-cicd/nginx:$(params.nginx-version)
+        FROM {{image_registry}}/nnd/baseimage/python:$(params.python-version)-slim
         LABEL APP_IMAGE=$(params.app-image)
-        ADD curl -o authbind_2.1.3_amd64.deb {{nexus_raw_url}}debian/pool/main/a/authbind/authbind_2.1.3_amd64.deb 
-        ENV APP_HOME=/usr/share/nginx/html \
+        ARG PIP_INDEX_URL
+        ARG PIP_TRUSTED_HOST
+        ENV APP_HOME=/app \
             LANGUAGE= \
             LANG=C.UTF-8 \
             LC_ALL=C.UTF-8 \
-            TZ=Asia/Seoul
-        COPY $(params.artifact-source) $(params.artifact-target)
-        RUN ln -snf /usr/share/zoneinfo/${TZ} /etc/localtime && echo ${TZ} > /etc/timezone && \
-            dpkg -i authbind*.deb && rm -rf authbind* && \
-            sed -i 's/^user /# user /g' /etc/nginx/nginx.conf && \
-            sed -i 's/\/var\/run\/nginx.pid/\/tmp\/nginx.pid/g' /etc/nginx/nginx.conf && \
-            chown -R nginx:nginx /etc/nginx && \
-            chown -R nginx:nginx /var/cache/nginx && \
-            chown -R nginx:nginx /var/log/nginx && \
-            chown -R nginx:nginx /tmp && \
-            chown -R nginx:nginx /usr/share/nginx/html && \
-            touch /etc/authbind/byport/80 && \
-            chown nginx /etc/authbind/byport/80 && \
-            chmod 500 /etc/authbind/byport/80
-        USER nginx
+            TZ=Asia/Seoul \
+            PYTHONDONTWRITEBYTECODE=1 \
+            PYTHONUNBUFFERED=1 \
+            TMPDIR=/app/tmp
         WORKDIR ${APP_HOME}
-        CMD ["authbind", "--deep", "nginx", "-g", "daemon off;"]
+        COPY $(params.requirements-file) ./
+        RUN pip install --no-cache-dir -r $(params.requirements-file)
+        COPY . .
+        RUN ln -snf /usr/share/zoneinfo/${TZ} /etc/localtime && echo ${TZ} > /etc/timezone && \
+            mkdir -p ${APP_HOME}/data ${APP_HOME}/logs ${APP_HOME}/tmp && \
+            chown -R 1001:1001 ${APP_HOME}
+        USER 1001
+        EXPOSE $(params.app-port)
+        CMD ["uvicorn", "$(params.app-module)", "--host", "0.0.0.0", "--port", "$(params.app-port)"]
     runAfter:
     - code-analysis
     taskRef:
@@ -286,6 +298,8 @@ spec:
       value:
       - --tar-path=$(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-repo-name)/image.tar
       - --destination=$(params.app-image):latest
+      - --build-arg=PIP_INDEX_URL=$(params.pip-index-url)
+      - --build-arg=PIP_TRUSTED_HOST=$(params.pip-trusted-host)
     - name: IMAGE
       value: $(params.app-image):$(params.cicd-auto-tag)
     - name: DOCKERFILE
@@ -318,10 +332,6 @@ spec:
   - displayName: Image Scan
     name: image-scan
     when:
-    # - input: $(params.app-env)
-    #   operator: in
-    #   values:
-    #   - dev
     - input: $(params.skip-image-scan)
       operator: in
       values:
@@ -336,8 +346,6 @@ spec:
       - --input $(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-repo-name)/image.tar
     - name: TRIVY_IMAGE
       value: "{{image_registry}}/nnd/tekton-cicd/trivy:0.54.2"
-    # - name: IMAGE
-    #   value: $(params.app-image):$(params.cicd-auto-tag)
     - name: AIR_GAPPED_ENABLED
       value: "true"
     runAfter:
@@ -589,9 +597,8 @@ spec:
   - name: shared-data
   - name: gitconfig
   - name: ssl-ca-directory
-  - name: npmrc-settings
-  - name: npm-local-cache
-  - name: node_modules
+  - name: pip-settings
+  - name: pip-local-cache
   - name: sonar-credentials
   - name: dockerconfig
   - name: trivy-local-cache

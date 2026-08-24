@@ -108,10 +108,10 @@ spec:
       fi
 
       if [ "${WORKSPACE_SSL_CA_DIRECTORY_BOUND}" = "true" ] ; then
-         export GIT_SSL_CAPATH="${WORKSPACE_SSL_CA_DIRECTORY_PATH}"
-         if [ "${PARAM_CRT_FILENAME}" != "" ] ; then
+        export GIT_SSL_CAPATH="${WORKSPACE_SSL_CA_DIRECTORY_PATH}"
+        if [ "${PARAM_CRT_FILENAME}" != "" ] ; then
             export GIT_SSL_CAINFO="${WORKSPACE_SSL_CA_DIRECTORY_PATH}/${PARAM_CRT_FILENAME}"
-         fi
+        fi
       fi
 
       # Setting up the config for the git.

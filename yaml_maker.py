@@ -53,7 +53,6 @@ def load_env():
         if id_key in env and pw_key in env:
             s = f"{env[id_key]}:{env[pw_key]}"
             env[result_key] = base64.b64encode(s.encode("utf-8")).decode("utf-8")
-    env['node_selector_list'] = [n.strip() for n in str(env.get('node_selector', '')).split(',') if n.strip()]
     return env
 
 data = load_env()

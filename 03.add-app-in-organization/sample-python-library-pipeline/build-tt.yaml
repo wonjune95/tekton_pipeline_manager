@@ -13,7 +13,6 @@ spec:
   - name: code-repo-org
   - name: code-repo-name
   - name: code-revision
-  # build-el 의 바인딩이 넘겨주므로 선언은 유지. build-maven-library 에는 없는 파라미터라 전달은 안 함
   - name: code-branch
   resourcetemplates:
   - apiVersion: tekton.dev/v1
@@ -37,10 +36,12 @@ spec:
         value: $(params.git-host-url)/$(params.code-repo-org)/$(params.code-repo-name).git
       - name: code-revision
         value: $(tt.params.code-revision)
-      - name: java-version
-        value: "17"
+      - name: python-version
+        value: "3.13"
+      - name: requirements-file
+        value: requirements.txt
       - name: artifact-find-pattern
-        value: target/*.jar
+        value: dist/*.whl
       - name: artifact-rename
         value: ""
       - name: skip-code-test
@@ -49,7 +50,6 @@ spec:
         value: "true"
       - name: skip-code-artifact
         value: "false"
-      # 라이브러리 배포 후 이를 참조하는 앱 빌드를 자동 실행하려면 "false" + build-trigger-scripts 지정
       - name: skip-build-trigger
         value: "true"
       - name: app-env
@@ -61,7 +61,7 @@ spec:
         - name: kind
           value: pipeline
         - name: name
-          value: build-maven-library
+          value: build-python-library
         - name: namespace
           value: tekton-catalog
         resolver: cluster
@@ -80,13 +80,13 @@ spec:
       - name: ssl-ca-directory
         secret:
           secretName: cicdssl-cacerts-secret
-      - name: maven-settings
+      - name: pip-settings
         secret:
           secretName: cicdbot-nexus-secret
-      - name: maven-local-repo
+      - name: pip-local-cache
         persistentVolumeClaim:
           claimName: cicdvol-shared-local-pvc
-        subPath: .maven-local-repo
+        subPath: .pip-local-cache
       - name: sonar-credentials
         secret:
           secretName: cicdbot-sonarqube-secret

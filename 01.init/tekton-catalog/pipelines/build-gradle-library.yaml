@@ -1,11 +1,12 @@
 apiVersion: tekton.dev/v1
 kind: Pipeline
 metadata:
-  name: build-maven-library
+  name: build-gradle-library
   namespace: tekton-catalog
 spec:
   description: |
-    This Pipeline for maven library build.
+    This Pipeline for gradle library build. (publish to nexus)
+    build-maven-library 의 gradle 판. 이미지 빌드/배포 없이 넥서스 publish 까지만 수행한다.
   params:
   - name: git-host-url
     default: "{{gitea_domain}}"
@@ -14,7 +15,7 @@ spec:
     default: sample
     type: string
   - name: code-repo-name
-    default: sample-egovsht-core
+    default: sample-gradle-core
     type: string
   - name: code-repo-url
     description: Code Repository URL to clone from.
@@ -25,10 +26,13 @@ spec:
     default: main
     type: string
   - name: java-version
-    default: "8"
+    default: "17"
+    type: string
+  - name: build-profile
+    default: $(params.app-env)
     type: string
   - name: artifact-find-pattern
-    default: target/*.jar
+    default: build/libs/*.jar
     type: string
   - name: artifact-rename
     default: ""
@@ -97,19 +101,21 @@ spec:
     params:
     - name: BASH_IMAGE
       value: "{{image_registry}}/nnd/tekton-cicd/bash:5.2.21"
-    - name: MAVEN_IMAGE
-      value: "{{image_registry}}/nnd/tekton-cicd/maven:3.9.5-eclipse-temurin-$(params.java-version)"
+    - name: GRADLE_IMAGE
+      value: "{{image_registry}}/nnd/tekton-cicd/gradle:jdk$(params.java-version)"
     - name: CONTEXT_DIR
       value: $(params.working-pr-dir)/$(params.code-repo-name)
-    - name: GOALS
+    - name: GRADLE_TASKS
       value:
       - clean
-      - package
-      - -B
-      - -U
-      - -P$(params.app-env)
-      - -DskipTests=true
-      - -Dmaven.test.skip=true
+      - build
+      # 넥서스 init.gradle 이 jar 태스크를 꺼두므로(부트앱 기준) 라이브러리는 이 플래그로 되살린다
+      - -PlibraryBuild
+      - -Pprofile=$(params.build-profile)
+      - --exclude-task=test
+      - --info
+      - --warning-mode=all
+      - --refresh-dependencies
     - name: ARTIFACT_FIND_PATTERN
       value: $(params.artifact-find-pattern)
     - name: ARTIFACT_RENAME
@@ -122,7 +128,7 @@ spec:
       - name: kind
         value: task
       - name: name
-        value: maven
+        value: gradle
       - name: namespace
         value: tekton-catalog
       resolver: cluster
@@ -131,17 +137,13 @@ spec:
       workspace: shared-data
     - name: ssl-ca-directory
       workspace: ssl-ca-directory
-    - name: maven-settings
-      workspace: maven-settings
-    - name: maven-local-repo
-      workspace: maven-local-repo
+    - name: gradle-settings
+      workspace: gradle-settings
+    - name: gradle-local-repo
+      workspace: gradle-local-repo
   - displayName: Code JunitTest
     name: code-test
     when:
-    # - input: $(params.app-env)
-    #   operator: in
-    #   values:
-    #   - dev
     - input: $(params.skip-code-test)
       operator: in
       values:
@@ -149,18 +151,21 @@ spec:
     params:
     - name: BASH_IMAGE
       value: "{{image_registry}}/nnd/tekton-cicd/bash:5.2.21"
-    - name: MAVEN_IMAGE
-      value: "{{image_registry}}/nnd/tekton-cicd/maven:3.9.5-eclipse-temurin-$(params.java-version)"
+    - name: GRADLE_IMAGE
+      value: "{{image_registry}}/nnd/tekton-cicd/gradle:jdk$(params.java-version)"
     - name: CONTEXT_DIR
       value: $(params.working-pr-dir)/$(params.code-repo-name)
-    - name: GOALS
+    - name: GRADLE_TASKS
       value:
-      - surefire-report:report
-      - -B
-      - -U
-      - -P$(params.app-env)
-      - -DskipTests=false
-      - -Dmaven.test.skip=false
+      - test
+      - -PlibraryBuild
+      - -Pprofile=$(params.build-profile)
+      - --exclude-task=compileJava
+      - --exclude-task=processResources
+      - --exclude-task=classes
+      - --continue
+      - --info
+      - --warning-mode=all
     - name: ARTIFACT_FIND_PATTERN
       value: $(params.artifact-find-pattern)
     - name: ARTIFACT_RENAME
@@ -173,7 +178,7 @@ spec:
       - name: kind
         value: task
       - name: name
-        value: maven
+        value: gradle
       - name: namespace
         value: tekton-catalog
       resolver: cluster
@@ -182,17 +187,13 @@ spec:
       workspace: shared-data
     - name: ssl-ca-directory
       workspace: ssl-ca-directory
-    - name: maven-settings
-      workspace: maven-settings
-    - name: maven-local-repo
-      workspace: maven-local-repo
+    - name: gradle-settings
+      workspace: gradle-settings
+    - name: gradle-local-repo
+      workspace: gradle-local-repo
   - displayName: Code Analysis
     name: code-analysis
     when:
-    # - input: $(params.app-env)
-    #   operator: in
-    #   values:
-    #   - dev
     - input: $(params.skip-code-analysis)
       operator: in
       values:
@@ -204,8 +205,9 @@ spec:
       value: "{{sonar_host_url_internal}}"
     - name: SONAR_PROJECT_KEY
       value: $(params.code-repo-name)
+    # gradle task 의 version result 는 bootJar MANIFEST 에서만 채워진다. 라이브러리는 비므로 commit 사용.
     - name: PROJECT_VERSION
-      value: $(tasks.code-build.results.version)
+      value: $(tasks.code-fetch.results.commit)
     - name: SOURCE_TO_SCAN
       value: .
     - name: SONAR_SCANNER_IMAGE
@@ -225,11 +227,11 @@ spec:
     - name: SONAR_JAVA_SOURCE
       value: $(params.java-version)
     - name: SONAR_JAVA_BINARIES
-      value: target/classes
+      value: build/classes/java/main
     - name: SONAR_JAVA_LIBRARIES
-      value: target/**/*.jar
+      value: build/dependencies/*.jar
     - name: SONAR_JUNIT_REPORTPATHS
-      value: target/surefire-reports
+      value: build/test-results/test
     - name: SONAR_PROP_IMAGE
       value: "{{image_registry}}/nnd/tekton-cicd/bash:5.2.21"
     - name: SONAR_BRANCH_NAME
@@ -253,15 +255,9 @@ spec:
       workspace: ssl-ca-directory
     - name: sonar-credentials
       workspace: sonar-credentials
-    - name: maven-local-repo
-      workspace: maven-local-repo
   - displayName: Code Artifact
     name: code-artifact
     when:
-    # - input: $(params.app-env)
-    #   operator: in
-    #   values:
-    #   - dev
     - input: $(params.skip-code-artifact)
       operator: in
       values:
@@ -269,18 +265,18 @@ spec:
     params:
     - name: BASH_IMAGE
       value: "{{image_registry}}/nnd/tekton-cicd/bash:5.2.21"
-    - name: MAVEN_IMAGE
-      value: "{{image_registry}}/nnd/tekton-cicd/maven:3.9.5-eclipse-temurin-$(params.java-version)"
+    - name: GRADLE_IMAGE
+      value: "{{image_registry}}/nnd/tekton-cicd/gradle:jdk$(params.java-version)"
     - name: CONTEXT_DIR
       value: $(params.working-pr-dir)/$(params.code-repo-name)
-    - name: GOALS
+    - name: GRADLE_TASKS
       value:
-      - deploy
-      - -B
-      - -U
-      - -P$(params.app-env)
-      - -DskipTests=true
-      - -Dmaven.test.skip=true
+      - publish
+      - -PlibraryBuild
+      - -Pprofile=$(params.build-profile)
+      - --exclude-task=test
+      - --info
+      - --warning-mode=all
     - name: ARTIFACT_FIND_PATTERN
       value: $(params.artifact-find-pattern)
     - name: ARTIFACT_RENAME
@@ -293,7 +289,7 @@ spec:
       - name: kind
         value: task
       - name: name
-        value: maven
+        value: gradle
       - name: namespace
         value: tekton-catalog
       resolver: cluster
@@ -302,10 +298,10 @@ spec:
       workspace: shared-data
     - name: ssl-ca-directory
       workspace: ssl-ca-directory
-    - name: maven-settings
-      workspace: maven-settings
-    - name: maven-local-repo
-      workspace: maven-local-repo
+    - name: gradle-settings
+      workspace: gradle-settings
+    - name: gradle-local-repo
+      workspace: gradle-local-repo
   finally:
   - displayName: Build Trigger
     name: build-trigger
@@ -383,7 +379,7 @@ spec:
   - name: shared-data
   - name: gitconfig
   - name: ssl-ca-directory
-  - name: maven-settings
-  - name: maven-local-repo
+  - name: gradle-settings
+  - name: gradle-local-repo
   - name: sonar-credentials
   - name: kubeconfig

@@ -1,0 +1,150 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  annotations:
+    tekton.dev/categories: Build Tools
+    tekton.dev/displayName: python
+    tekton.dev/pipelines.minVersion: 0.17.0
+    tekton.dev/platforms: linux/amd64
+    tekton.dev/tags: python, pip, pytest
+  labels:
+    app.kubernetes.io/version: "0.1.0"
+  name: python
+  namespace: tekton-catalog
+spec:
+  description: |-
+    This Task can be used to run a Python(pip) build. It uses a workspace to store pip local cache.
+    tektoncd/catalog 의 pytest / upload-pypi task 를 이 카탈로그 규칙(v1 API, 넥서스 경유, 사설 CA,
+    artifact result)에 맞춰 재작성한 것. maven / npm task 와 같은 자리에 끼워 쓴다.
+  params:
+  - default: python:3.13-slim
+    description: Python base image
+    name: PYTHON_IMAGE
+    type: string
+  - default: pytest
+    description: |
+      requirements 설치 후 실행할 명령.
+      (e.g. "pytest --junitxml=report/junit.xml", "python -m build", "twine upload -r nexus dist/*")
+    name: PYTHON_COMMAND
+    type: string
+  - default: requirements.txt
+    description: 설치할 requirements 파일. 파일이 없으면 건너뛴다.
+    name: REQUIREMENTS_FILE
+    type: string
+  - default: ""
+    description: requirements 외에 추가로 설치할 패키지. (e.g. "pytest build twine")
+    name: EXTRA_PACKAGES
+    type: string
+  - default: .
+    description: The context directory within the repository for sources on which
+      we want to execute python commands.
+    name: CONTEXT_DIR
+    type: string
+  - default: ca-certificates.crt
+    description: file name of mounted crt using ssl-ca-directory workspace.
+    name: CRT_FILE_NAME
+    type: string
+  #
+  - default: ""
+    name: ARTIFACT_FIND_PATTERN
+    type: string
+  - default: ""
+    name: ARTIFACT_RENAME
+    type: string
+  results:
+  - name: buildDirectory
+    type: string
+  - name: version
+    type: string
+  - name: artifactSourceName
+    type: string
+  - name: artifactTargetName
+    type: string
+  steps:
+  - computeResources: {}
+    env:
+    - name: TZ
+      value: Asia/Seoul
+    - name: PIP_DISABLE_PIP_VERSION_CHECK
+      value: "1"
+    - name: PYTHONDONTWRITEBYTECODE
+      value: "1"
+    - name: PYTHONUNBUFFERED
+      value: "1"
+    image: $(params.PYTHON_IMAGE)
+    name: pip-command
+    workingDir: $(workspaces.source.path)/$(params.CONTEXT_DIR)
+    script: |
+      #!/usr/bin/env bash
+      set -e
+
+      # 결과값 기본치. 파이프라인이 참조하는데 안 쓰면 실행이 깨진다.
+      printf "%s" "" > "$(results.buildDirectory.path)"
+      printf "%s" "" > "$(results.version.path)"
+      printf "%s" "" > "$(results.artifactSourceName.path)"
+      printf "%s" "" > "$(results.artifactTargetName.path)"
+
+      # 넥서스 인덱스 설정 (cicdbot-nexus-secret 의 pip.conf)
+      if [ "$(workspaces.pip-settings.bound)" = "true" ] && [ -f "$(workspaces.pip-settings.path)/pip.conf" ]; then
+        export PIP_CONFIG_FILE="$(workspaces.pip-settings.path)/pip.conf"
+        echo "using pip config : ${PIP_CONFIG_FILE}"
+      fi
+
+      if [ "$(workspaces.pip-local-cache.bound)" = "true" ]; then
+        export PIP_CACHE_DIR="$(workspaces.pip-local-cache.path)/.pip"
+      fi
+
+      # 사설 CA 는 기본 번들에 "덧붙인다". 교체하면 공개 인덱스 https 검증이 깨진다.
+      if [ "$(workspaces.ssl-ca-directory.bound)" = "true" ] && [ -f "$(workspaces.ssl-ca-directory.path)/$(params.CRT_FILE_NAME)" ]; then
+        CA_BUNDLE="$(python -c 'import certifi; print(certifi.where())' 2>/dev/null || echo /etc/ssl/certs/ca-certificates.crt)"
+        cat "$(workspaces.ssl-ca-directory.path)/$(params.CRT_FILE_NAME)" >> "${CA_BUNDLE}"
+        export PIP_CERT="${CA_BUNDLE}" REQUESTS_CA_BUNDLE="${CA_BUNDLE}" SSL_CERT_FILE="${CA_BUNDLE}"
+        echo "using ca bundle : ${CA_BUNDLE}"
+      fi
+
+      if [ -f "$(params.REQUIREMENTS_FILE)" ]; then
+        pip install --no-input -r "$(params.REQUIREMENTS_FILE)"
+      else
+        echo "skip: $(params.REQUIREMENTS_FILE) not found in $(pwd)"
+      fi
+
+      if [ -n "$(params.EXTRA_PACKAGES)" ]; then
+        pip install --no-input $(params.EXTRA_PACKAGES)
+      fi
+
+      $(params.PYTHON_COMMAND)
+
+      if [ -n "$(params.ARTIFACT_FIND_PATTERN)" ]; then
+        BUILD_DIRECTORY="$(echo $(params.ARTIFACT_FIND_PATTERN) | xargs -r dirname | head -1 | tr -d '\n')"
+        printf "%s" "${BUILD_DIRECTORY}" > "$(results.buildDirectory.path)"
+
+        ARTIFACT_SOURCE_NAME="$(echo $(params.ARTIFACT_FIND_PATTERN) | xargs -r basename | head -1 | tr -d '\n')"
+        printf "%s" "${ARTIFACT_SOURCE_NAME}" > "$(results.artifactSourceName.path)"
+
+        # wheel/sdist 파일명에서 버전을 뽑는다. (name-version-py3-none-any.whl)
+        case "${ARTIFACT_SOURCE_NAME}" in
+          *.whl|*.tar.gz)
+            VERSION="$(echo "${ARTIFACT_SOURCE_NAME}" | sed -e 's/\.tar\.gz$//' -e 's/\.whl$//' | cut -d'-' -f2 | tr -d '\n')"
+            printf "%s" "${VERSION}" > "$(results.version.path)"
+            ;;
+        esac
+
+        ARTIFACT_TARGET_NAME=${ARTIFACT_SOURCE_NAME}
+        if [ -n "$(params.ARTIFACT_RENAME)" ]; then
+          ARTIFACT_TARGET_NAME="$(echo $(params.ARTIFACT_RENAME) | tr -d '\n')"
+        fi
+        printf "%s" "${ARTIFACT_TARGET_NAME}" > "$(results.artifactTargetName.path)"
+      fi
+
+  workspaces:
+  - description: The workspace consisting of python project.
+    name: source
+  - description: 넥서스 pip.conf / .pypirc 가 들어있는 워크스페이스. (cicdbot-nexus-secret)
+    name: pip-settings
+    optional: true
+  - description: pip 캐시 워크스페이스.
+    name: pip-local-cache
+    optional: true
+  - description: 사설 CA 인증서. maven 처럼 keystore 가 아니라 CA 번들에 append 한다.
+    name: ssl-ca-directory
+    optional: true

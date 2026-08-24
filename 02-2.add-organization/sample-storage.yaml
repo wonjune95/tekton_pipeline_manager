@@ -27,12 +27,10 @@ spec:
     required:
       nodeSelectorTerms:
       - matchExpressions:
-        - key: kubernetes.io/hostname
+        - key: nodegroup
           operator: In
           values:
-{%- for node in node_selector_list %}
-          - {{node}}
-{%- endfor %}
+          - {{node_group|default('tekton-build')}}
 ---
 # Local 스토리지 sc (기본 cicd 작업용)
 # # Local 스토리지 사용을 위한 워커노드 사전 작업절차
@@ -60,9 +58,7 @@ spec:
     required:
       nodeSelectorTerms:
       - matchExpressions:
-        - key: kubernetes.io/hostname
+        - key: nodegroup
           operator: In
           values:
-{%- for node in node_selector_list %}
-          - {{node}}
-{%- endfor %}
+          - {{node_group|default('tekton-build')}}

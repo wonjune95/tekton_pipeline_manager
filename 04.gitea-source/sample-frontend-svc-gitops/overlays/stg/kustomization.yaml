@@ -49,10 +49,10 @@ patches:
         requests:
           storage: 25Gi
       storageClassName: {{organization_name}}-sc
-namespace: {{organization_name}}-dev
+namespace: {{organization_name}}-stg
 commonLabels:
   app: {{application_name}}
 images:
 - name: {{application_name}}
-  newName: {{image_registry}}/{{organization_name}}-dev/{{organization_name}}/{{application_name}}
+  newName: {{image_registry}}/{{organization_name}}-stg/{{organization_name}}/{{application_name}}
   newTag: latest

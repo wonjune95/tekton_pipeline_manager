@@ -21,8 +21,10 @@ spec:
     value: {{branch_menu}}
   - name: java-version
     value: "17"
+  - name: build-profile
+    value: {{env_menu}}
   - name: artifact-find-pattern
-    value: target/*.jar
+    value: build/libs/*.jar
   - name: artifact-rename
     value: ""
   - name: skip-code-test
@@ -31,7 +33,6 @@ spec:
     value: "true"
   - name: skip-code-artifact
     value: "false"
-  # 라이브러리 배포 후 이를 참조하는 앱 빌드를 자동 실행하려면 "false" + build-trigger-scripts 지정
   - name: skip-build-trigger
     value: "true"
   - name: app-env
@@ -43,7 +44,7 @@ spec:
     - name: kind
       value: pipeline
     - name: name
-      value: build-maven-library
+      value: build-gradle-library
     - name: namespace
       value: tekton-catalog
     resolver: cluster
@@ -63,13 +64,13 @@ spec:
   - name: ssl-ca-directory
     secret:
       secretName: cicdssl-cacerts-secret
-  - name: maven-settings
+  - name: gradle-settings
     secret:
       secretName: cicdbot-nexus-secret
-  - name: maven-local-repo
+  - name: gradle-local-repo
     persistentVolumeClaim:
       claimName: cicdvol-shared-local-pvc
-    subPath: .maven-local-repo
+    subPath: .gradle-local-repo
   - name: sonar-credentials
     secret:
       secretName: cicdbot-sonarqube-secret

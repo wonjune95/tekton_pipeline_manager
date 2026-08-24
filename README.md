@@ -59,6 +59,21 @@ chmod +x install.sh && sudo ./install.sh
 
 OS(Rocky 8 / 9, Ubuntu 22 / 24)를 자동 감지합니다.
 
+### 빌드 노드 라벨
+
+CICD 파드(tekton task pod, oauth2-proxy)와 로컬 PV는 **노드 그룹 라벨**로 배치 노드를 고릅니다.
+`tekton_init.toml` 의 `node_group` 값과 같은 라벨을 대상 노드에 미리 붙여야 합니다.
+
+```bash
+kubectl label node <노드명> nodegroup=tekton-build
+kubectl get nodes -L nodegroup          # 라벨 확인
+```
+
+> 노드를 늘릴 때는 라벨만으로 부족합니다. 해당 노드에
+> `/CICD-DATA/local/{org}-cicd`, `/CICD-DATA/store/{org}-cicd` 디렉터리가 있어야 PVC가 바인딩됩니다.
+> 노드명을 나열하던 이전 방식(`node_selector`)은 `node_group` 으로 대체되었습니다. 이미 생성된 PV의
+> `nodeAffinity` 는 불변 필드라 기존 조직 PV는 예전 방식대로 남습니다(동작에는 영향 없음).
+
 ---
 
 ## 폴더 구조
@@ -72,8 +87,8 @@ tekton_pipeline_manager/
 │
 ├── 01.init/                            ← Tekton 초기화 YAML 템플릿
 │   ├── tekton-catalog/                 ← 공통 Task / Pipeline
-│   │   ├── tasks/        (16개: build-1~6, deploy, kubernetes-cli 등)
-│   │   └── pipelines/    (11개: build-{maven,gradle,npm}-*, deploy-argocd 등)
+│   │   ├── tasks/        (18개: build-1~6, deploy, kubernetes-cli 등)
+│   │   └── pipelines/    (14개: build-{maven,gradle,npm,python}-*, deploy-argocd 등)
 │   ├── tekton-with-role/               ← Tekton 기본 RBAC / ServiceAccount
 │   ├── tekton-group-role/              ← Tekton 그룹 롤
 │   ├── argocd/                         ← ArgoCD 설정
@@ -91,7 +106,10 @@ tekton_pipeline_manager/
 │   ├── sample-maven-spring-vm-pipeline/
 │   ├── sample-gradle-boot-argo-pipeline/
 │   ├── sample-gradle-tomcat-argo-pipeline/
-│   └── sample-spring-library-pipeline/
+│   ├── sample-python-fastapi-argo-pipeline/
+│   ├── sample-spring-library-pipeline/      ← 라이브러리 3종은 deploy-* 없음
+│   ├── sample-gradle-library-pipeline/
+│   └── sample-python-library-pipeline/
 │       └── build-{el,pr,tt}.yaml, deploy-{el,pr,tt}.yaml
 │
 ├── 04.gitea-source/                    ← GitOps 매니페스트 템플릿 (kustomize 구조)
@@ -147,7 +165,7 @@ tekton_pipeline_manager/
 | 섹션 | 내용 |
 |------|------|
 | 1. 프로젝트 기본 정보 | `project_name` |
-| 2. Kubernetes 클러스터 | `nks_master_server`, `node_selector`, `nnd_cluster_name`, `cicdbot_token` 등 |
+| 2. Kubernetes 클러스터 | `nks_master_server`, `node_group`, `nnd_cluster_name`, `cicdbot_token` 등 |
 | 3. OAuth | Gitea OAuth2 App 클라이언트 ID/Secret |
 | 4. Harbor | `image_registry`, `harbor_admin_pw` 등 |
 | 5. 컴포넌트 관리자 계정 | Gitea/Nexus/ArgoCD/SonarQube admin |
@@ -235,6 +253,9 @@ Tekton/ArgoCD/Harbor/Nexus/Gitea/SonarQube의 계정·저장소를 자동 생성
 - Harbor robot 계정 생성 (Harbor 사용 시)
 - Gitea CICD 서비스 계정 생성 (cicdbot, devopsadmin, cicdmanager)
 - Nexus 계정 + 저장소 자동 생성 (maven-default / -release / -snapshot / -group, npm-default / -group, raw-default / -group)
+
+> **pypi 저장소는 자동 생성 대상이 아닙니다.** python 파이프라인(7·10번)을 쓰려면 Nexus에서 직접 만들어야 합니다.
+> `pypi-proxy`(remote: `https://pypi.org`) + `pypi-hosted` + `pypi-default-group`(멤버: hosted, proxy)
 - SonarQube 토큰 발급
 
 **C. 결과 저장** → `{project_name}-init_result.json`
@@ -392,13 +413,20 @@ kubectl apply -f result/{project_name}/{org}-cicd/02-2.add-organization.yaml
 | 4 | maven-spring | VM SSH |
 | 5 | gradle-spring-boot | ArgoCD |
 | 6 | gradle-spring + tomcat | ArgoCD |
-| 7 | maven-spring-library | Nexus 배포 (배포 클러스터 선택 없음) |
+| 7 | python-fastapi | ArgoCD |
+| 8 | maven-spring-library | Nexus 배포 (배포 클러스터 선택 없음) |
+| 9 | gradle-spring-library | Nexus 배포 (배포 클러스터 선택 없음) |
+| 10 | python-library (wheel/sdist) | Nexus 배포 (배포 클러스터 선택 없음) |
+
+> 뒤로가기는 **`0`** 입니다 (항목이 10개라 `9`를 유형에 사용).
+> python 유형은 Harbor에 `{image_registry}/nnd/baseimage/python:{python-version}-slim` 이미지와
+> Nexus pypi 저장소가 준비되어 있어야 합니다.
 
 ### 추가 입력
 
 - **환경명**: `dev` / `stg` / `prod` (자유 입력, k8s 명명 규칙 적용)
 - **브랜치명**: 트리거할 git 브랜치 (예: `dev`, `main`)
-- **배포 클러스터**: 목록에서 선택 (유형 4, 7은 제외)
+- **배포 클러스터**: 목록에서 선택 (유형 4·8·9·10은 제외)
 
 ### 실행 후
 
@@ -478,7 +506,8 @@ sudo mkdir -p /CICD-DATA/local/{org}-cicd /CICD-DATA/store/{org}-cicd
 ```
 01.init/tekton-catalog/
 ├── tasks/         (build-1~6 단계별 task, deploy-{vm-ssh,zap}, kubernetes-cli)
-└── pipelines/     (build-{maven,gradle,npm}-*, deploy-argocd, deploy-artifact-via-openssh-sftp)
+│                  build-2-{maven,gradle,npm,python}.yaml 이 언어별 빌드 task
+└── pipelines/     (build-{maven,gradle,npm,python}-*, deploy-argocd, deploy-artifact-via-openssh-sftp)
 ```
 
 **커스텀 절차**
@@ -536,6 +565,25 @@ kubectl get ClusterRoleBinding cicdbot -o yaml > ./02-2.add-organization/rbac.ya
 
 ClusterRoleBinding `cicdbot` 은 전역 단일이라, 도구가 만든 `02-2.add-organization.yaml` 을 그대로 적용하면 `subjects` 가 **해당 조직 1개로 덮어써져** 다른 조직 ServiceAccount 가 사라집니다.
 **과거 조직의 `02-2.add-organization.yaml` 은 절대 재적용하지 말 것.** 자세한 안전 적용법은 "메뉴 2: 조직 추가 — ClusterRoleBinding `cicdbot` 덮어쓰기 주의" 항목 참고.
+
+### task 파드가 Pending 에서 멈춤
+
+배치 대상 노드에 `nodegroup` 라벨이 없거나, 라벨은 있는데 `/CICD-DATA` 디렉터리·PV가 없는 경우입니다.
+
+```bash
+kubectl get nodes -L nodegroup
+kubectl describe pod <파드명> -n {org}-cicd | tail -20   # FailedScheduling / PVC 바인딩 확인
+```
+
+### python 파이프라인에서 pip 설치 실패
+
+Nexus에 pypi 저장소가 없거나 `pip.conf` 의 index-url 이 잘못된 경우입니다.
+pip 은 PEP 503 simple 인덱스를 읽으므로 **경로 끝에 `/simple` 이 필요**합니다 (maven/npm 과 다름).
+
+```
+index-url  = {nexus_internal}/repository/pypi-default-group/simple   ← 다운로드(group)
+repository = {nexus_internal}/repository/pypi-hosted/                ← 업로드(hosted, /simple 없음)
+```
 
 ### 초기화 파일 없음 오류 (메뉴 2~5)
 

@@ -80,6 +80,13 @@ spec:
         exit 1
       fi
 
+      # 결과값 기본치. 라이브러리 빌드는 bootJar MANIFEST 가 없어 version/artifactId 가 안 채워진다.
+      printf "%s" "" > "$(results.buildDirectory.path)"
+      printf "%s" "" > "$(results.version.path)"
+      printf "%s" "" > "$(results.artifactId.path)"
+      printf "%s" "" > "$(results.artifactSourceName.path)"
+      printf "%s" "" > "$(results.artifactTargetName.path)"
+
       # Check build results and set output variables
       if [ -n "$(params.ARTIFACT_FIND_PATTERN)" ]; then
         BUILD_DIRECTORY="$(echo $(params.ARTIFACT_FIND_PATTERN) | cut -d'/' -f1 | tr -d '\n')"

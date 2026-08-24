@@ -1,11 +1,13 @@
 apiVersion: tekton.dev/v1
 kind: Pipeline
 metadata:
-  name: build-maven-library
+  name: build-python-library
   namespace: tekton-catalog
 spec:
   description: |
-    This Pipeline for maven library build.
+    This Pipeline for python library build. (publish to nexus pypi-hosted)
+    build-maven-library / build-gradle-library 의 파이썬 판. 이미지 빌드/배포 없이 wheel/sdist publish 까지만 수행한다.
+    소스에 pyproject.toml (name/version/dependencies) 이 있어야 한다.
   params:
   - name: git-host-url
     default: "{{gitea_domain}}"
@@ -14,7 +16,7 @@ spec:
     default: sample
     type: string
   - name: code-repo-name
-    default: sample-egovsht-core
+    default: sample-python-core
     type: string
   - name: code-repo-url
     description: Code Repository URL to clone from.
@@ -24,11 +26,15 @@ spec:
     description: Revision to checkout. (branch, tag, sha, ref, etc...)
     default: main
     type: string
-  - name: java-version
-    default: "8"
+  - name: python-version
+    default: "3.13"
+    type: string
+  - name: requirements-file
+    description: 라이브러리는 보통 pyproject.toml 에 의존성을 두므로 파일이 없으면 건너뛴다.
+    default: requirements.txt
     type: string
   - name: artifact-find-pattern
-    default: target/*.jar
+    default: dist/*.whl
     type: string
   - name: artifact-rename
     default: ""
@@ -95,21 +101,17 @@ spec:
   - displayName: Code Build
     name: code-build
     params:
-    - name: BASH_IMAGE
-      value: "{{image_registry}}/nnd/tekton-cicd/bash:5.2.21"
-    - name: MAVEN_IMAGE
-      value: "{{image_registry}}/nnd/tekton-cicd/maven:3.9.5-eclipse-temurin-$(params.java-version)"
+    - name: PYTHON_IMAGE
+      value: "{{image_registry}}/nnd/baseimage/python:$(params.python-version)-slim"
     - name: CONTEXT_DIR
       value: $(params.working-pr-dir)/$(params.code-repo-name)
-    - name: GOALS
-      value:
-      - clean
-      - package
-      - -B
-      - -U
-      - -P$(params.app-env)
-      - -DskipTests=true
-      - -Dmaven.test.skip=true
+    - name: REQUIREMENTS_FILE
+      value: $(params.requirements-file)
+    - name: EXTRA_PACKAGES
+      value: build
+    - name: PYTHON_COMMAND
+      value: |
+        python -m build
     - name: ARTIFACT_FIND_PATTERN
       value: $(params.artifact-find-pattern)
     - name: ARTIFACT_RENAME
@@ -122,7 +124,7 @@ spec:
       - name: kind
         value: task
       - name: name
-        value: maven
+        value: python
       - name: namespace
         value: tekton-catalog
       resolver: cluster
@@ -131,40 +133,30 @@ spec:
       workspace: shared-data
     - name: ssl-ca-directory
       workspace: ssl-ca-directory
-    - name: maven-settings
-      workspace: maven-settings
-    - name: maven-local-repo
-      workspace: maven-local-repo
-  - displayName: Code JunitTest
+    - name: pip-settings
+      workspace: pip-settings
+    - name: pip-local-cache
+      workspace: pip-local-cache
+  - displayName: Code PytestTest
     name: code-test
     when:
-    # - input: $(params.app-env)
-    #   operator: in
-    #   values:
-    #   - dev
     - input: $(params.skip-code-test)
       operator: in
       values:
       - "false"
     params:
-    - name: BASH_IMAGE
-      value: "{{image_registry}}/nnd/tekton-cicd/bash:5.2.21"
-    - name: MAVEN_IMAGE
-      value: "{{image_registry}}/nnd/tekton-cicd/maven:3.9.5-eclipse-temurin-$(params.java-version)"
+    - name: PYTHON_IMAGE
+      value: "{{image_registry}}/nnd/baseimage/python:$(params.python-version)-slim"
     - name: CONTEXT_DIR
       value: $(params.working-pr-dir)/$(params.code-repo-name)
-    - name: GOALS
-      value:
-      - surefire-report:report
-      - -B
-      - -U
-      - -P$(params.app-env)
-      - -DskipTests=false
-      - -Dmaven.test.skip=false
-    - name: ARTIFACT_FIND_PATTERN
-      value: $(params.artifact-find-pattern)
-    - name: ARTIFACT_RENAME
-      value: $(params.artifact-rename)
+    - name: REQUIREMENTS_FILE
+      value: $(params.requirements-file)
+    # 테스트에서 패키지를 import 해야 하므로 자기 자신을 편집모드로 설치한다
+    - name: EXTRA_PACKAGES
+      value: -e . pytest
+    - name: PYTHON_COMMAND
+      value: |
+        pytest -q --junitxml=report/junit.xml
     runAfter:
     - code-build
     taskRef:
@@ -173,7 +165,7 @@ spec:
       - name: kind
         value: task
       - name: name
-        value: maven
+        value: python
       - name: namespace
         value: tekton-catalog
       resolver: cluster
@@ -182,17 +174,13 @@ spec:
       workspace: shared-data
     - name: ssl-ca-directory
       workspace: ssl-ca-directory
-    - name: maven-settings
-      workspace: maven-settings
-    - name: maven-local-repo
-      workspace: maven-local-repo
+    - name: pip-settings
+      workspace: pip-settings
+    - name: pip-local-cache
+      workspace: pip-local-cache
   - displayName: Code Analysis
     name: code-analysis
     when:
-    # - input: $(params.app-env)
-    #   operator: in
-    #   values:
-    #   - dev
     - input: $(params.skip-code-analysis)
       operator: in
       values:
@@ -204,6 +192,7 @@ spec:
       value: "{{sonar_host_url_internal}}"
     - name: SONAR_PROJECT_KEY
       value: $(params.code-repo-name)
+    # python task 가 wheel 파일명에서 뽑아준 버전
     - name: PROJECT_VERSION
       value: $(tasks.code-build.results.version)
     - name: SOURCE_TO_SCAN
@@ -219,17 +208,11 @@ spec:
     - name: SONAR_LINKS_SCM
       value: $(params.code-repo-url)
     - name: SONAR_LANGUAGE
-      value: java
+      value: py
     - name: SONAR_INCLUSIONS
-      value: src/**/*.java
-    - name: SONAR_JAVA_SOURCE
-      value: $(params.java-version)
-    - name: SONAR_JAVA_BINARIES
-      value: target/classes
-    - name: SONAR_JAVA_LIBRARIES
-      value: target/**/*.jar
-    - name: SONAR_JUNIT_REPORTPATHS
-      value: target/surefire-reports
+      value: "**/*.py"
+    - name: SONAR_EXCLUSIONS
+      value: "tests/**,build/**,dist/**,**/__pycache__/**"
     - name: SONAR_PROP_IMAGE
       value: "{{image_registry}}/nnd/tekton-cicd/bash:5.2.21"
     - name: SONAR_BRANCH_NAME
@@ -253,34 +236,26 @@ spec:
       workspace: ssl-ca-directory
     - name: sonar-credentials
       workspace: sonar-credentials
-    - name: maven-local-repo
-      workspace: maven-local-repo
   - displayName: Code Artifact
     name: code-artifact
     when:
-    # - input: $(params.app-env)
-    #   operator: in
-    #   values:
-    #   - dev
     - input: $(params.skip-code-artifact)
       operator: in
       values:
       - "false"
     params:
-    - name: BASH_IMAGE
-      value: "{{image_registry}}/nnd/tekton-cicd/bash:5.2.21"
-    - name: MAVEN_IMAGE
-      value: "{{image_registry}}/nnd/tekton-cicd/maven:3.9.5-eclipse-temurin-$(params.java-version)"
+    - name: PYTHON_IMAGE
+      value: "{{image_registry}}/nnd/baseimage/python:$(params.python-version)-slim"
     - name: CONTEXT_DIR
       value: $(params.working-pr-dir)/$(params.code-repo-name)
-    - name: GOALS
-      value:
-      - deploy
-      - -B
-      - -U
-      - -P$(params.app-env)
-      - -DskipTests=true
-      - -Dmaven.test.skip=true
+    - name: REQUIREMENTS_FILE
+      value: $(params.requirements-file)
+    - name: EXTRA_PACKAGES
+      value: twine
+    # 업로드 대상/계정은 넥서스 시크릿의 .pypirc([nexus] = pypi-hosted) 에 있다
+    - name: PYTHON_COMMAND
+      value: |
+        twine upload --disable-progress-bar --config-file $(workspaces.pip-settings.path)/.pypirc -r nexus dist/*
     - name: ARTIFACT_FIND_PATTERN
       value: $(params.artifact-find-pattern)
     - name: ARTIFACT_RENAME
@@ -293,7 +268,7 @@ spec:
       - name: kind
         value: task
       - name: name
-        value: maven
+        value: python
       - name: namespace
         value: tekton-catalog
       resolver: cluster
@@ -302,10 +277,10 @@ spec:
       workspace: shared-data
     - name: ssl-ca-directory
       workspace: ssl-ca-directory
-    - name: maven-settings
-      workspace: maven-settings
-    - name: maven-local-repo
-      workspace: maven-local-repo
+    - name: pip-settings
+      workspace: pip-settings
+    - name: pip-local-cache
+      workspace: pip-local-cache
   finally:
   - displayName: Build Trigger
     name: build-trigger
@@ -383,7 +358,7 @@ spec:
   - name: shared-data
   - name: gitconfig
   - name: ssl-ca-directory
-  - name: maven-settings
-  - name: maven-local-repo
+  - name: pip-settings
+  - name: pip-local-cache
   - name: sonar-credentials
   - name: kubeconfig
