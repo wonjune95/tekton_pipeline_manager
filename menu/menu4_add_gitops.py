@@ -242,13 +242,14 @@ def create_registry(data):
 
     # 스킴별 verify 처리
     is_https = base.startswith('https://')
-    verify_tls = bool(data.get('gitea_verify_tls', True)) if is_https else True
+    verify_tls = bool(data.get('gitea_verify_tls', False))
     if is_https and not verify_tls:
         requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
 
     def _req(method, url, **kw):
-        if is_https:
-            kw.setdefault('verify', verify_tls)
+        # http 로 시작해도 gitea 가 308 로 https 에 넘기므로 verify 는 항상 지정해야 한다.
+        # (verify 는 TLS 에서만 쓰이므로 순수 http 구간에서는 무시된다)
+        kw.setdefault('verify', verify_tls)
         kw.setdefault('timeout', 15)
         return requests.request(method, url, auth=auth, **kw)
 
