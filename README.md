@@ -529,8 +529,8 @@ kubectl apply -f my-sonarqube-scanner-custom.yaml -n tekton-catalog
 
 ```
 result/
-└── gov24/                                        ← project_name
-    ├── gov24-init_result.json                    ← 초기화 결과 (이후 모든 작업의 기준값)
+└── sample/                                       ← project_name
+    ├── sample-init_result.json                   ← 초기화 결과 (이후 모든 작업의 기준값)
     ├── 01-1.init-basic.yaml
     ├── 01-2.init-pipeline.yaml
     ├── 01-3.init-oauth.yaml
