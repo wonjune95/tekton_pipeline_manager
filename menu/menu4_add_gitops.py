@@ -208,6 +208,8 @@ def choice_gitops(env_dict):
         'backend-svc',
         'backend-hpa-bluegreen',
         'backend-hpa-canary',
+        'frontend-istio',
+        'backend-istio',
     ]
     while True:
         draw_menu('GitOps 유형 선택', 16, [
@@ -219,15 +221,18 @@ def choice_gitops(env_dict):
             {'key': '6', 'name': 'Backend',  'name_v': 7, 'name_w': 10, 'desc': 'service',              'desc_v':  7},
             {'key': '7', 'name': 'Backend',  'name_v': 7, 'name_w': 10, 'desc': 'ingress - blue/green', 'desc_v': 20},
             {'key': '8', 'name': 'Backend',  'name_v': 7, 'name_w': 10, 'desc': 'ingress - canary',     'desc_v': 16},
-            {'key': '9', 'name': '뒤로가기', 'name_v': 8},
+            {'key': '9', 'name': 'Frontend', 'name_v': 8, 'name_w': 10, 'desc': 'istio gateway',        'desc_v': 13},
+            {'key': '10', 'name': 'Backend', 'name_v': 7, 'name_w': 10, 'desc': 'istio gateway (in/egress)', 'desc_v': 26},
+            {'key': '0', 'name': '뒤로가기', 'name_v': 8},
         ])
         choice = _safe_input_number('\033[1;96m[ 메뉴를 선택하세요 ] ▶ \033[0m')
         if not choice:
             print("문자는 처리가 되지 않습니다.")
             continue
-        if int(choice) == 9:
+        if int(choice) == 0:
             return ''
         if int(choice) < 1 or int(choice) >= len(selection_list):
+            print(f'\033[31m1~{len(selection_list)-1} 사이의 번호를 입력하세요.\033[0m')
             continue
         return create_gitops_repository(selection_list[int(choice)], env_dict)
 

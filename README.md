@@ -113,8 +113,8 @@ tekton_pipeline_manager/
 │       └── build-{el,pr,tt}.yaml, deploy-{el,pr,tt}.yaml
 │
 ├── 04.gitea-source/                    ← GitOps 매니페스트 템플릿 (kustomize 구조)
-│   ├── sample-frontend-{ing,svc,hpa-bluegreen,hpa-canary}-gitops/
-│   └── sample-backend-{ing,svc,hpa-bluegreen,hpa-canary}-gitops/
+│   ├── sample-frontend-{ing,svc,hpa-bluegreen,hpa-canary,istio}-gitops/
+│   └── sample-backend-{ing,svc,hpa-bluegreen,hpa-canary,istio}-gitops/
 │       └── base/ + overlays/{dev,stg,prod}/
 │
 ├── menu/                               ← 메뉴별 Python 로직
@@ -174,7 +174,7 @@ tekton_pipeline_manager/
 | 8. 클러스터 내부 서비스 URL | 기본값 유지 권장 |
 | 9. 배포 대상 클러스터 | dev/stg/prod × be/fe 클러스터 API |
 | 10. NAS 스토리지 | 환경별 NFS 서버 IP·경로 |
-| 11. 애플리케이션 도메인 | nip.io 도메인, LB IP |
+| 11. 애플리케이션 도메인 | nip.io 도메인, LB IP, Istio egress 대상 호스트 |
 | 12. VM SSH 배포 | VM 호스트 목록, SSH 키 |
 | 13. 캐시 노드 | SSH 접속 정보, PEM 파일명 |
 | 14. SSL 인증서 | 와일드카드 dev/prod SSL 인증서·키 |
@@ -451,16 +451,27 @@ Gitea에 GitOps 저장소와 환경별 소스 저장소를 자동 생성하고, 
 
 ### GitOps 유형
 
-| 번호 | 유형 |
-|------|------|
-| 1 | Frontend — ingress |
-| 2 | Frontend — service |
-| 3 | Frontend — ingress + blue/green |
-| 4 | Frontend — ingress + canary |
-| 5 | Backend — ingress |
-| 6 | Backend — service |
-| 7 | Backend — ingress + blue/green |
-| 8 | Backend — ingress + canary |
+| 번호 | 유형 | 트래픽 진입 |
+|------|------|-------------|
+| 1 | Frontend | Ingress |
+| 2 | Frontend | Service (LoadBalancer) |
+| 3 | Frontend | Ingress + blue/green (Argo Rollouts) |
+| 4 | Frontend | Ingress + canary (Argo Rollouts) |
+| 5 | Backend | Ingress |
+| 6 | Backend | Service (LoadBalancer) |
+| 7 | Backend | Ingress + blue/green (Argo Rollouts) |
+| 8 | Backend | Ingress + canary (Argo Rollouts) |
+| 9 | Frontend | Istio ingress gateway |
+| 10 | Backend | Istio ingress + egress gateway |
+
+**9·10번 (Istio)** — Istio 가 설치된 클러스터 전용입니다.
+
+- Ingress 대신 `Gateway` + `VirtualService` + `DestinationRule` 을 생성합니다. 10번은 여기에
+  `ServiceEntry` + egress gateway 라우팅이 추가됩니다. 전 구간 평문 HTTP 입니다.
+- 사이드카 주입은 네임스페이스 라벨 `istio-injection: enabled` 로 켜지며,
+  `01.init/` 와 `02-1.add-storage-in-organization/` 의 `{env}-{tier}-cluster.yaml` 에 반영되어 있습니다.
+- egress 대상은 `tekton_init.toml` 의 `{dev|stg|prod}_egress_hosts` 에 지정합니다. 메시가 기본값
+  `ALLOW_ANY` 이면 나열한 호스트만 egress gateway 를 경유하고 나머지는 그대로 나갑니다.
 
 ### 처리 내용
 
@@ -635,8 +646,19 @@ curl -H "Authorization: Basic {git_cicd_auth}" \
 
 ## 보안 유의사항
 
-- `tekton_init.toml` 과 `{project_name}-init_result.json` 에는 패스워드·토큰 등 민감 정보가 포함됩니다.
-  Git에 커밋하지 않도록 `.gitignore` 에 추가하거나 별도 보안 저장소에서 관리하세요.
+- `tekton_init.toml` 은 **git 이 추적하는 파일**이며 저장소에는 플레이스홀더만 들어 있습니다.
+  여기에 실제 패스워드·토큰을 채운 뒤 커밋하면 그대로 원격 저장소에 올라갑니다.
+  채워 넣기 전에 로컬 변경이 커밋 대상에서 빠지도록 처리하세요.
+
+  ```bash
+  git update-index --skip-worktree 00.reset/tekton_init.toml   # 로컬 수정을 git 이 무시
+  git update-index --no-skip-worktree 00.reset/tekton_init.toml # 템플릿 자체를 고칠 때 해제
+  ```
+
+  이미 값이 채워진 상태로 커밋했다면, 커밋을 되돌리는 것만으로는 부족합니다.
+  노출된 토큰·패스워드는 전부 재발급해야 합니다.
+- `result/{project_name}-init_result.json` 에도 같은 민감 정보가 들어갑니다.
+  `result/` 는 `.gitignore` 에 있어 추적되지 않습니다.
 - `.pem` 파일은 SSH 프라이빗 키이므로 권한을 `600` 으로 설정하세요.
   `chmod 600 result/{project_name}/*.pem`
 - Harbor, Nexus, Gitea, SonarQube API 호출 시 TLS 검증이 비활성화(`verify=False`)되어 있습니다.

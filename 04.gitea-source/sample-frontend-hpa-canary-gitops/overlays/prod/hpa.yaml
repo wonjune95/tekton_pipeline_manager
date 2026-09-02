@@ -9,7 +9,6 @@ spec:                                            # HorizontalPodAutoscaler objec
     apiVersion: argoproj.io/v1alpha1
     kind: Rollout
     name: {{application_name}}-ro
-  targetCPUUtilizationPercentage: 60
   metrics:
   - type: Resource
     resource:

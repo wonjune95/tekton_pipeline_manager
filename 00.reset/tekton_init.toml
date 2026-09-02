@@ -177,6 +177,25 @@ prod_lb_name = ""
 
 
 # ════════════════════════════════════════════════════════
+# 11-1. Istio egress 대상 외부 호스트
+#
+#   backend-istio GitOps 가 ServiceEntry / egress gateway 로 내보낼 외부 호스트.
+#   평문 HTTP(80) 기준이며, 여러 개면 배열에 나열한다.
+#   메시가 기본값 ALLOW_ANY 이면 여기 나열한 호스트만 게이트웨이를 경유하고
+#   목록에 없는 호스트는 사이드카가 그대로 밖으로 내보낸다.
+# ════════════════════════════════════════════════════════
+dev_egress_hosts = [
+  "YOUR_DEV_EXTERNAL_HOST",
+]
+stg_egress_hosts = [
+  "YOUR_STG_EXTERNAL_HOST",
+]
+prod_egress_hosts = [
+  "YOUR_PROD_EXTERNAL_HOST",
+]
+
+
+# ════════════════════════════════════════════════════════
 # 12. VM SSH 배포 설정
 #
 #   vm_host : YAML 들여쓰기 형식 문자열 (예: "    - 10.0.0.1\n    - 10.0.0.2")
