@@ -429,14 +429,14 @@ Gitea에 GitOps 저장소와 환경별 소스 저장소를 자동 생성하고, 
 | 2 | Frontend | Service (LoadBalancer) |
 | 3 | Frontend | Ingress + blue/green (Argo Rollouts) |
 | 4 | Frontend | Ingress + canary (Argo Rollouts) |
-| 5 | Backend | Ingress |
-| 6 | Backend | Service (LoadBalancer) |
-| 7 | Backend | Ingress + blue/green (Argo Rollouts) |
-| 8 | Backend | Ingress + canary (Argo Rollouts) |
-| 9 | Frontend | Istio ingress gateway |
+| 5 | Frontend | Istio ingress gateway |
+| 6 | Backend | Ingress |
+| 7 | Backend | Service (LoadBalancer) |
+| 8 | Backend | Ingress + blue/green (Argo Rollouts) |
+| 9 | Backend | Ingress + canary (Argo Rollouts) |
 | 10 | Backend | Istio ingress + egress gateway |
 
-**9·10번 (Istio)** — Istio 가 설치된 클러스터 전용입니다.
+**5·10번 (Istio)** — Istio 가 설치된 클러스터 전용입니다.
 
 - Ingress 대신 `Gateway` + `VirtualService` + `DestinationRule` 을 생성합니다. 10번은 여기에
   `ServiceEntry` + egress gateway 라우팅이 추가됩니다. 전 구간 평문 HTTP 입니다.
@@ -472,6 +472,8 @@ CICD 캐시 노드의 특정 조직 폴더를 **삭제 후 재생성**합니다.
 4. PEM 있음 → `cicd_cache_node_ip` 각 노드에 SSH로 자동 실행
 5. PEM 없음 → 수동 실행 명령어 출력
 
+- 템플릿 렌더에 쓰는 값은 `init_result.json` 을 먼저 읽고, 거기 없는 키만 `tekton_init.toml`
+  에서 보충합니다. 그래서 toml 에 키를 추가한 뒤 메뉴 1 을 다시 돌리지 않아도 반영됩니다.
 ```bash
 # 수동 실행 (각 캐시 노드에서)
 sudo rm -rf /CICD-DATA/local/{org}-cicd /CICD-DATA/store/{org}-cicd

@@ -204,26 +204,26 @@ def choice_gitops(env_dict):
         'frontend-svc',
         'frontend-hpa-bluegreen',
         'frontend-hpa-canary',
+        'frontend-istio',
         'backend-ing',
         'backend-svc',
         'backend-hpa-bluegreen',
         'backend-hpa-canary',
-        'frontend-istio',
         'backend-istio',
     ]
     while True:
         draw_menu('GitOps 유형 선택', 16, [
-            {'key': '1', 'name': 'Frontend', 'name_v': 8, 'name_w': 10, 'desc': 'ingress',              'desc_v':  7},
-            {'key': '2', 'name': 'Frontend', 'name_v': 8, 'name_w': 10, 'desc': 'service',              'desc_v':  7},
-            {'key': '3', 'name': 'Frontend', 'name_v': 8, 'name_w': 10, 'desc': 'ingress - blue/green', 'desc_v': 20},
-            {'key': '4', 'name': 'Frontend', 'name_v': 8, 'name_w': 10, 'desc': 'ingress - canary',     'desc_v': 16},
-            {'key': '5', 'name': 'Backend',  'name_v': 7, 'name_w': 10, 'desc': 'ingress',              'desc_v':  7},
-            {'key': '6', 'name': 'Backend',  'name_v': 7, 'name_w': 10, 'desc': 'service',              'desc_v':  7},
-            {'key': '7', 'name': 'Backend',  'name_v': 7, 'name_w': 10, 'desc': 'ingress - blue/green', 'desc_v': 20},
-            {'key': '8', 'name': 'Backend',  'name_v': 7, 'name_w': 10, 'desc': 'ingress - canary',     'desc_v': 16},
-            {'key': '9', 'name': 'Frontend', 'name_v': 8, 'name_w': 10, 'desc': 'istio gateway',        'desc_v': 13},
-            {'key': '10', 'name': 'Backend', 'name_v': 7, 'name_w': 10, 'desc': 'istio gateway (in/egress)', 'desc_v': 26},
-            {'key': '0', 'name': '뒤로가기', 'name_v': 8},
+            {'key': '1',  'name': 'Frontend', 'name_v': 8, 'name_w': 10, 'desc': 'ingress',              'desc_v':  7},
+            {'key': '2',  'name': 'Frontend', 'name_v': 8, 'name_w': 10, 'desc': 'service',              'desc_v':  7},
+            {'key': '3',  'name': 'Frontend', 'name_v': 8, 'name_w': 10, 'desc': 'ingress - blue/green', 'desc_v': 20},
+            {'key': '4',  'name': 'Frontend', 'name_v': 8, 'name_w': 10, 'desc': 'ingress - canary',     'desc_v': 16},
+            {'key': '5',  'name': 'Frontend', 'name_v': 8, 'name_w': 10, 'desc': 'istio',                'desc_v':  5},
+            {'key': '6',  'name': 'Backend',  'name_v': 7, 'name_w': 10, 'desc': 'ingress',              'desc_v':  7},
+            {'key': '7',  'name': 'Backend',  'name_v': 7, 'name_w': 10, 'desc': 'service',              'desc_v':  7},
+            {'key': '8',  'name': 'Backend',  'name_v': 7, 'name_w': 10, 'desc': 'ingress - blue/green', 'desc_v': 20},
+            {'key': '9',  'name': 'Backend',  'name_v': 7, 'name_w': 10, 'desc': 'ingress - canary',     'desc_v': 16},
+            {'key': '10', 'name': 'Backend',  'name_v': 7, 'name_w': 10, 'desc': 'istio - egress',       'desc_v': 14},
+            {'key': '0',  'name': '뒤로가기', 'name_v': 8},
         ])
         choice = _safe_input_number('\033[1;96m[ 메뉴를 선택하세요 ] ▶ \033[0m')
         if not choice:
@@ -307,6 +307,18 @@ def create_gitops_repository(env_param, env_param_dict):
         data = json.load(f_in)
 
     data['organization_name'] = env_param_dict['organization_name']
+    # init_result.json 은 메뉴 1 실행 시점의 스냅샷이라 그 뒤 추가된 toml 키가 빠져 있다.
+    # 없는 키만 toml 에서 보충한다(재초기화 없이 새 설정이 템플릿에 반영되도록).
+    try:
+        import tomllib
+    except ModuleNotFoundError:
+        import tomli as tomllib
+    toml_path = './00.reset/tekton_init.toml'
+    if os.path.exists(toml_path):
+        with open(toml_path, 'rb') as f_toml:
+            for k, v in tomllib.load(f_toml).items():
+                data.setdefault(k, v)
+
     data['application_name']  = env_param_dict['application_name']
 
     gitops_folder = data["application_name"] + "-gitops"
