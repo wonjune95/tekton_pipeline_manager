@@ -1,0 +1,77 @@
+# ─────────────────────────────────────────────
+# INGRESS : 외부 → 프론트엔드
+# ─────────────────────────────────────────────
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: {{application_name}}-gw
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - {{application_name}}.{{dev_frontend_domain_name}}
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: {{application_name}}-vs
+spec:
+  hosts:
+  - {{application_name}}.{{dev_frontend_domain_name}}
+  gateways:
+  - {{application_name}}-gw
+  http:
+  - name: default
+    # match:
+    # - uri:
+    #     prefix: /
+    route:
+    - destination:
+        host: {{application_name}}-svc
+        port:
+          number: 80
+      weight: 100
+    # timeout: 30s
+    # retries:
+    #   attempts: 3
+    #   perTryTimeout: 5s
+    #   retryOn: gateway-error,connect-failure,refused-stream
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: {{application_name}}-dr
+spec:
+  host: {{application_name}}-svc
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL
+    loadBalancer:
+      consistentHash:                   # 기존 ingress 의 session-cookie affinity 대체
+        httpCookie:
+          name: route
+          path: /
+          ttl: 0s
+    # connectionPool:
+    #   tcp:
+    #     maxConnections: 100
+    #   http:
+    #     http1MaxPendingRequests: 100
+    #     maxRequestsPerConnection: 0
+    # outlierDetection:
+    #   consecutive5xxErrors: 5
+    #   interval: 30s
+    #   baseEjectionTime: 30s
+  # istio 기반 canary 로 갈 때 subsets 채우고 위 VS 에 weight 를 붙인다
+  # subsets:
+  # - name: stable
+  #   labels:
+  #     version: stable
+  # - name: canary
+  #   labels:
+  #     version: canary

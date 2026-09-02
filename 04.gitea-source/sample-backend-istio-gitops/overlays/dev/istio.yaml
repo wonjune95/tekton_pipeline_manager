@@ -1,0 +1,173 @@
+# ─────────────────────────────────────────────
+# INGRESS : 프론트엔드 / 외부 → 백엔드
+# ─────────────────────────────────────────────
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: {{application_name}}-gw
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - {{application_name}}.{{dev_backend_domain_name}}
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: {{application_name}}-vs
+spec:
+  hosts:
+  - {{application_name}}.{{dev_backend_domain_name}}
+  # 프론트가 LB 를 타지 않고 메시 내부에서 바로 호출하게 하려면
+  # 아래 svc 호스트와 gateways 의 mesh 를 같이 연다
+  # - {{application_name}}-svc
+  gateways:
+  - {{application_name}}-gw
+  # - mesh
+  http:
+  - name: default
+    # match:
+    # - uri:
+    #     prefix: /api
+    route:
+    - destination:
+        host: {{application_name}}-svc
+        port:
+          number: 8080
+      weight: 100
+    # timeout: 60s
+    # retries:
+    #   attempts: 3
+    #   perTryTimeout: 5s
+    #   retryOn: gateway-error,connect-failure,refused-stream
+    # corsPolicy:
+    #   allowOrigins:
+    #   - exact: https://{{application_name}}.{{dev_frontend_domain_name}}
+    #   allowMethods:
+    #   - GET
+    #   - POST
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: {{application_name}}-dr
+spec:
+  host: {{application_name}}-svc
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL
+    loadBalancer:
+      simple: LEAST_REQUEST
+    # connectionPool:
+    #   tcp:
+    #     maxConnections: 100
+    #   http:
+    #     http1MaxPendingRequests: 100
+    # outlierDetection:
+    #   consecutive5xxErrors: 5
+    #   interval: 30s
+    #   baseEjectionTime: 30s
+  # istio 기반 canary 로 갈 때 subsets 채우고 위 VS 에 weight 를 붙인다
+  # subsets:
+  # - name: stable
+  #   labels:
+  #     version: stable
+  # - name: canary
+  #   labels:
+  #     version: canary
+{% if dev_egress_hosts is defined and dev_egress_hosts %}---
+# ─────────────────────────────────────────────
+# EGRESS : 백엔드 → 외부 (평문 HTTP)
+#   tekton_init.toml 의 dev_egress_hosts 가 비어 있으면 통째로 생성되지 않는다
+# ─────────────────────────────────────────────
+apiVersion: networking.istio.io/v1beta1
+kind: ServiceEntry
+metadata:
+  name: {{application_name}}-external
+spec:
+  hosts:
+{%- for h in dev_egress_hosts %}
+  - {{ h }}
+{%- endfor %}
+  location: MESH_EXTERNAL
+  resolution: DNS
+  ports:
+  - number: 80
+    name: http
+    protocol: HTTP
+  # 외부 DB 등 TCP 포트가 더 필요하면 추가한다
+  # - number: 5432
+  #   name: postgres
+  #   protocol: TCP
+---
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: {{application_name}}-egress-gw
+spec:
+  selector:
+    istio: egressgateway
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+{%- for h in dev_egress_hosts %}
+    - {{ h }}
+{%- endfor %}
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: {{application_name}}-egress-dr
+spec:
+  host: istio-egressgateway.istio-system.svc.cluster.local
+  subsets:
+  - name: external
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: {{application_name}}-egress-vs
+spec:
+  hosts:
+{%- for h in dev_egress_hosts %}
+  - {{ h }}
+{%- endfor %}
+  gateways:
+  - mesh
+  - {{application_name}}-egress-gw
+  http:
+  # 1단계 : 파드 사이드카 → egress gateway
+  - match:
+    - gateways:
+      - mesh
+      port: 80
+    route:
+    - destination:
+        host: istio-egressgateway.istio-system.svc.cluster.local
+        subset: external
+        port:
+          number: 80
+  # 2단계 : egress gateway → 외부 (Host 헤더로 대상 구분)
+{%- for h in dev_egress_hosts %}
+  - match:
+    - gateways:
+      - {{application_name}}-egress-gw
+      port: 80
+      authority:
+        exact: {{ h }}
+    route:
+    - destination:
+        host: {{ h }}
+        port:
+          number: 80
+      weight: 100
+{%- endfor %}
+{% endif %}

@@ -6,10 +6,9 @@ spec:                                            # HorizontalPodAutoscaler objec
   minReplicas: 2                                 # 다운스케일 시 생성할 수 있는 Pod의 최소수
   maxReplicas: 4                                 # 업스케일 시 생성할 수 있는 Pod의 최대수
   scaleTargetRef:                                # HorizontalPodAutoscaler object가 동작할 대상에 대한 설정
-    apiVersion: argoproj.io/v1alpha1
-    kind: Rollout
-    name: {{application_name}}-ro
-  targetCPUUtilizationPercentage: 60
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{application_name}}-dp
   metrics:
   - type: Resource
     resource:

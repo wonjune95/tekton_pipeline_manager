@@ -4,6 +4,8 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: {{organization_name}}-dev
+  labels:
+    istio-injection: enabled
 ---
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
