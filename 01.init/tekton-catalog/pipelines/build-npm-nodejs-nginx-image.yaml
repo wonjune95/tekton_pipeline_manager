@@ -293,7 +293,7 @@ spec:
     - name: CONTEXT
       value: $(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-repo-name)
     - name: BUILDER_IMAGE
-      value: "{{image_registry}}/nnd/tekton-cicd/kaniko:v1.23.2"
+      value: "{{image_registry}}/nnd/tekton-cicd/kaniko@sha256:7af33c5e8b082a71ba3bf50859567fc4e0793188b02423c7beb58a8a0e299522"
     - name: BASH_IMAGE
       value: "{{image_registry}}/nnd/tekton-cicd/bash:5.2.21"
     runAfter:
