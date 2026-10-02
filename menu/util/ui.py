@@ -103,8 +103,9 @@ def draw_menu(title: str, title_v: int, items: list, notes: list = None):
         print(f'  {C}╠{SEP}╣{R}')
 
     print(f'  {C}║{" " * _N}║{R}')
+    key_w = max(len(str(i['key'])) for i in items)   # [ 1 ] 과 [ 10 ] 이 섞여도 컬럼을 맞춘다
     for item in items:
-        key    = item['key']
+        key    = str(item['key']).rjust(key_w)
         name   = item['name']
         name_v = item['name_v']
         name_w = item.get('name_w', name_v)
@@ -112,7 +113,7 @@ def draw_menu(title: str, title_v: int, items: list, notes: list = None):
         desc_v = item.get('desc_v', 0)
         pad    = name_w - name_v
         if desc:
-            cv = 9 + (len(str(key)) - 1) + name_w + desc_v    # "  [ k ]  " = 9 visual (키가 2자리면 +1)
+            cv = 9 + (key_w - 1) + name_w + desc_v    # "  [ k ]  " = 9 visual (키 폭만큼 가산)
             print(_hline(
                 f'  {Y}[ {key} ]{R}  {W}{name}{R}{" " * pad}{G}{desc}{R}',
                 cv
@@ -120,7 +121,7 @@ def draw_menu(title: str, title_v: int, items: list, notes: list = None):
         else:
             print(_hline(
                 f'  {Y}[ {key} ]{R}  {W}{name}{R}',
-                9 + (len(str(key)) - 1) + name_v
+                9 + (key_w - 1) + name_v
             ))
 
     print(f'  {C}║{" " * _N}║{R}')

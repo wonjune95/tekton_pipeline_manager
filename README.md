@@ -472,6 +472,8 @@ Gitea에 GitOps 저장소와 환경별 소스 저장소를 자동 생성하고, 
   `01.init/` 와 `02-1.add-storage-in-organization/` 의 `{env}-{tier}-cluster.yaml` 에 반영되어 있습니다.
 - egress 대상은 `tekton_init.toml` 의 `{dev|stg|prod}_egress_hosts` 에 지정합니다. 메시가 기본값
   `ALLOW_ANY` 이면 나열한 호스트만 egress gateway 를 경유하고 나머지는 그대로 나갑니다.
+- 템플릿 렌더에 쓰는 값은 `init_result.json` 을 먼저 읽고, 거기 없는 키만 `tekton_init.toml`
+  에서 보충합니다. 그래서 toml 에 키를 추가한 뒤 메뉴 1 을 다시 돌리지 않아도 반영됩니다.
 
 ### 처리 내용
 
@@ -500,8 +502,6 @@ CICD 캐시 노드의 특정 조직 폴더를 **삭제 후 재생성**합니다.
 4. PEM 있음 → `cicd_cache_node_ip` 각 노드에 SSH로 자동 실행
 5. PEM 없음 → 수동 실행 명령어 출력
 
-- 템플릿 렌더에 쓰는 값은 `init_result.json` 을 먼저 읽고, 거기 없는 키만 `tekton_init.toml`
-  에서 보충합니다. 그래서 toml 에 키를 추가한 뒤 메뉴 1 을 다시 돌리지 않아도 반영됩니다.
 ```bash
 # 수동 실행 (각 캐시 노드에서)
 sudo rm -rf /CICD-DATA/local/{org}-cicd /CICD-DATA/store/{org}-cicd
@@ -542,8 +542,8 @@ kubectl apply -f my-sonarqube-scanner-custom.yaml -n tekton-catalog
 
 ```
 result/
-└── sample/                                       ← project_name
-    ├── sample-init_result.json                   ← 초기화 결과 (이후 모든 작업의 기준값)
+└── gov24/                                        ← project_name
+    ├── gov24-init_result.json                    ← 초기화 결과 (이후 모든 작업의 기준값)
     ├── 01-1.init-basic.yaml
     ├── 01-2.init-pipeline.yaml
     ├── 01-3.init-oauth.yaml

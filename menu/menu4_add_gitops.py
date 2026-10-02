@@ -307,7 +307,6 @@ def create_gitops_repository(env_param, env_param_dict):
     with open(init_file, 'r') as f_in:
         data = json.load(f_in)
 
-    data['organization_name'] = env_param_dict['organization_name']
     # init_result.json 은 메뉴 1 실행 시점의 스냅샷이라 그 뒤 추가된 toml 키가 빠져 있다.
     # 없는 키만 toml 에서 보충한다(재초기화 없이 새 설정이 템플릿에 반영되도록).
     try:
@@ -320,6 +319,7 @@ def create_gitops_repository(env_param, env_param_dict):
             for k, v in tomllib.load(f_toml).items():
                 data.setdefault(k, v)
 
+    data['organization_name'] = env_param_dict['organization_name']
     data['application_name']  = env_param_dict['application_name']
 
     gitops_folder = data["application_name"] + "-gitops"
