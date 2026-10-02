@@ -114,11 +114,13 @@ spec:
           name: tmp
       volumes:
       - name: data
-        persistentVolumeClaim:
-          claimName: {{application_name}}-data-pvc
+        emptyDir: {}
+        #persistentVolumeClaim:
+        #  claimName: {{application_name}}-data-pvc
       - name: log
-        persistentVolumeClaim:
-          claimName: {{application_name}}-log-pvc
+        emptyDir: {}
+        #persistentVolumeClaim:
+        #  claimName: {{application_name}}-log-pvc
       - name: tmp
         emptyDir: {}
 ---
@@ -130,11 +132,9 @@ metadata:
     loadbalancer.nhncloud/apply-subnet-host-routes: "true"
     loadbalancer.nhncloud/proxy-protocol: "true"
     service.beta.kubernetes.io/openstack-internal-load-balancer: "true" #사설 대역대시
-    loadbalancer.nhncloud/loadbalancer-name: "LB-int-dev-{{application_name}}"
   name: {{application_name}}-svc
 spec:
   externalTrafficPolicy: Local
-  loadBalancerIP: 192.168.84.111
   ipFamilies:
   - IPv4
   ipFamilyPolicy: SingleStack
@@ -145,28 +145,3 @@ spec:
     protocol: TCP
     targetPort: 8080
   type: LoadBalancer
----
-# apiVersion: autoscaling/v2beta2
-# kind: HorizontalPodAutoscaler
-# metadata:
-#  name: {{application_name}}-hpa
-# spec:
-#   maxReplicas: 10 #최대 레플리카 수
-#   minReplicas: 2  #최소 레플리카 수
-#   scaleTargetRef:
-#     apiVersion: apps/v1
-#     kind: Deployment
-#     name: {{application_name}}-dp
-#   metrics:
-#   - type: Resource
-#     resource:
-#       name: cpu
-#       target:
-#         type: Utilization
-#         averageUtilization: 50 #평균 CPU 사용량이 50% 이상인 경우 Scale Out 이하인 경우 Scale In
-#   - type: Resource
-#     resource:
-#       name: memory
-#       target:
-#         type: Utilization
-#         averageUtilization: 50 #평균 MEMORY 사용량이 50% 이상인 경우 Scale Out 이하인 경우 Scale In

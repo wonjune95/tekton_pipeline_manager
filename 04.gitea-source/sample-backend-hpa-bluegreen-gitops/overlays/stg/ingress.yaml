@@ -14,7 +14,7 @@ spec:
       paths:
       - backend:
           service:
-            name: {{application_name}}-blue--svc
+            name: {{application_name}}-blue-svc
             port:
               name: http
         path: /

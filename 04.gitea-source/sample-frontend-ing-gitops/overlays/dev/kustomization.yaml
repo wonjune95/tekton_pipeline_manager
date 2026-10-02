@@ -22,7 +22,7 @@ patches:
               - podAffinityTerm:
                   labelSelector:
                     matchLabels:
-                      app: {{application_name}}-dp
+                      app: {{application_name}}
                   topologyKey: kubernetes.io/hostname
                 weight: 1
 - target:

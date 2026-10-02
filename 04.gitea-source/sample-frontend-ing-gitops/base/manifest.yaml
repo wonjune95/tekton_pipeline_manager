@@ -119,8 +119,9 @@ spec:
           subPath: default.conf
       volumes:
       - name: log
-        persistentVolumeClaim:
-          claimName: {{application_name}}-log-pvc
+        emptyDir: {}
+        #persistentVolumeClaim:
+        #  claimName: {{application_name}}-log-pvc
       - emptyDir: {}
         name: cache
       - emptyDir: {}

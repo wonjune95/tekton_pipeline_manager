@@ -9,13 +9,17 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-  - host: {{application_name}}.{{prod_backend_domain_name}}
+  - host: {{application_name}}.{{prod_frontend_domain_name}}
     http:
       paths:
       - backend:
           service:
-            name: {{application_name}}-blue--svc
+            name: {{application_name}}-blue-svc
             port:
               name: http
         path: /
         pathType: Prefix
+  tls:
+  - hosts:
+    - {{application_name}}.{{prod_frontend_domain_name}}
+    secretName: secret-tls

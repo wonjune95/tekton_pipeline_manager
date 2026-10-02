@@ -1,3 +1,7 @@
+# 주의: 이 ConfigMap 은 기본적으로 어떤 워크로드에도 마운트되지 않는다.
+# 쓰려면 base/manifest.yaml 의 volumes / volumeMounts 에
+# /app/config/application.yaml 로 연결할 것 (Spring Boot 기본 탐색 경로).
+# 마운트하면 jar 내장 설정을 덮어쓰니 datasource 값을 먼저 확인할 것.
 apiVersion: v1
 kind: ConfigMap
 metadata:

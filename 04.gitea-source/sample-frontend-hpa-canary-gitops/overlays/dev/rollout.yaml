@@ -11,7 +11,7 @@ spec:
       stableService: {{application_name}}-stable-svc
       trafficRouting:
         nginx:
-          stableIngress: {{application_name}}-ingress  
+          stableIngress: {{application_name}}-ing
       steps:
       - setWeight: 10   # 10% Canary 트래픽
       - pause: {duration: 2m}

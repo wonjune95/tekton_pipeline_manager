@@ -6,19 +6,6 @@ resources:
 - configmap.yaml
 patches:
 - target:
-    kind: Service
-    name: {{application_name}}-svc
-  patch: |-
-    kind: Service
-    metadata:
-      name: {{application_name}}-svc
-      annotations:
-        TCP-80.loadbalancer.nhncloud/listener-protocol: "HTTP"
-        loadbalancer.nhncloud/loadbalancer-name: "{{stg_lb_name}}" # 수정
-        loadbalancer.openstack.org/keep-floatingip: "true" # 추가
-    spec:
-      loadBalancerIP: "{{stg_lb_ip}}" # 수정
-- target:
     kind: Deployment
     name: {{application_name}}-dp
   patch: |-
@@ -35,7 +22,7 @@ patches:
               - podAffinityTerm:
                   labelSelector:
                     matchLabels:
-                      app: {{application_name}}-dp
+                      app: {{application_name}}
                   topologyKey: kubernetes.io/hostname
                 weight: 1
 - target:

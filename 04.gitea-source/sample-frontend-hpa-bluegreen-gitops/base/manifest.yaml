@@ -40,22 +40,25 @@ spec:
       imagePullSecrets:
       - name: regcred
       securityContext:
-        fsGroup: 1001
+        fsGroup: 101
         fsGroupChangePolicy: OnRootMismatch
       containers:
       - name: {{application_name}}-con
         image: {{application_name}}
         imagePullPolicy: Always
         securityContext:
-          allowPrivilegeEscalation: false
+          # allowPrivilegeEscalation: false
+          allowPrivilegeEscalation: true
           capabilities:
             drop:
             - ALL
+            add:
+            - NET_BIND_SERVICE
           privileged: false
           readOnlyRootFilesystem: true
-          runAsGroup: 1001
+          runAsGroup: 101
           runAsNonRoot: true
-          runAsUser: 1001
+          runAsUser: 101
           seccompProfile:
             type: RuntimeDefault
         env:
@@ -69,59 +72,73 @@ spec:
           valueFrom: {fieldRef: {fieldPath: metadata.name}}
         - name: POD_IP
           valueFrom: {fieldRef: {fieldPath: status.podIP}}
-        - name: JAVA_OPTS_APPEND
-          value: "-Djava.io.tmpdir=/app/tmp -Dlogpath=/app/logs -Dhostname=$(POD_NAME)"
         lifecycle:
           preStop:
             exec:
               command: ["sh", "-c", "sleep 10"]
         livenessProbe:
           httpGet:
-            path: /actuator/health/liveness
-            port: 8080
+            path: /
+            port: 80
             scheme: HTTP
           initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 3
         ports:
-        - containerPort: 8080
+        - containerPort: 80
           name: http
           protocol: TCP
         readinessProbe:
           httpGet:
-            path: /actuator/health/readiness
-            port: 8080
+            path: /
+            port: 80
             scheme: HTTP
-          initialDelaySeconds: 15
+          initialDelaySeconds: 25
           periodSeconds: 5
           timeoutSeconds: 3
         resources:
           limits:
-            cpu: 2000m
-            ephemeral-storage: 10Gi
-            memory: 4096Mi
-          requests:
             cpu: 1000m
-            ephemeral-storage: 2Gi
-            memory: 2048Mi
+            ephemeral-storage: 5Gi
+            memory: 1024Mi
+          requests:
+            cpu: 500m
+            ephemeral-storage: 1Gi
+            memory: 1024Mi
         volumeMounts:
-        - mountPath: /app/data
-          name: data
-        - mountPath: /app/logs
+        - mountPath: /var/log/nginx
           name: log
-        - mountPath: /app/tmp
+        - mountPath: /var/cache/nginx
+          name: cache
+        - mountPath: /tmp
           name: tmp
+        - mountPath: /etc/nginx/nginx.conf
+          name: nginx-conf
+          subPath: nginx.conf
+        - mountPath: /etc/nginx/conf.d/default.conf
+          name: default-conf
+          subPath: default.conf
       volumes:
-      - name: data
-        emptyDir: {}
-        #persistentVolumeClaim:
-        #  claimName: {{application_name}}-data-pvc
       - name: log
         emptyDir: {}
         #persistentVolumeClaim:
         #  claimName: {{application_name}}-log-pvc
-      - name: tmp
-        emptyDir: {}
+      - emptyDir: {}
+        name: cache
+      - emptyDir: {}
+        name: tmp
+      - configMap:
+          items:
+          - key: nginx.conf
+            path: nginx.conf
+          name: {{application_name}}-nginx-cm
+        name: nginx-conf
+      - configMap:
+          items:
+          - key: default.conf
+            path: default.conf
+          name: {{application_name}}-nginx-cm
+        name: default-conf
 ---
 apiVersion: v1
 kind: Service
@@ -132,9 +149,9 @@ spec:
     app: {{application_name}}
   ports:
   - name: http
-    port: 8080
+    port: 80
     protocol: TCP
-    targetPort: 8080
+    targetPort: 80
 ---
 apiVersion: v1
 kind: Service
@@ -145,6 +162,6 @@ spec:
     app: {{application_name}}
   ports:
   - name: http
-    port: 8080
+    port: 80
     protocol: TCP
-    targetPort: 8080
+    targetPort: 80

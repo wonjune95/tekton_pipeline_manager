@@ -32,7 +32,6 @@ patches:
         port: 80
         protocol: TCP
         targetPort: http
-patches:
 - target:
     kind: Deployment
     name: {{application_name}}-dp
@@ -55,9 +54,6 @@ patches:
                 weight: 1
           containers:
           - name: {{application_name}}-con
-            env:
-            - name: JAVA_OPTS
-              value: "-Dfile.encoding=UTF-8 -Dspring.profiles.active=stg"
             resources:
               limits:
                 cpu: 1000m
