@@ -89,7 +89,7 @@ spec:
         - name: kind
           value: pipeline
         - name: name
-          value: build-maven-spring-boot-image
+          value: build-maven-spring-tomcat-image
         - name: namespace
           value: tekton-catalog
         resolver: cluster
