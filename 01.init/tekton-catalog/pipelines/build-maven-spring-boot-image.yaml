@@ -16,6 +16,10 @@ spec:
   - name: code-repo-name
     default: petclinic
     type: string
+  - name: code-dir
+    default: $(params.code-repo-name)
+    description: Directory to build, relative to the workspace PR dir. For a mono-repo use code-repo-name/backend.
+    type: string
   - name: code-repo-url
     description: Code Repository URL to clone from.
     default:  $(params.git-host-url)/$(params.code-repo-org)/$(params.code-repo-name).git
@@ -146,9 +150,9 @@ spec:
     - name: BASH_IMAGE
       value: "{{image_registry}}/nnd/tekton-cicd/bash:5.2.21"
     - name: MAVEN_IMAGE
-      value: "{{image_registry}}/nnd/tekton-cicd/maven:3.9.5-eclipse-temurin-$(params.java-version)"
+      value: "{{image_registry}}/nnd/tekton-cicd/maven:3.9.11-eclipse-temurin-$(params.java-version)"
     - name: CONTEXT_DIR
-      value: $(params.working-pr-dir)/$(params.code-repo-name)
+      value: $(params.working-pr-dir)/$(params.code-dir)
     - name: GOALS
       value:
       - clean
@@ -194,9 +198,9 @@ spec:
     - name: BASH_IMAGE
       value: "{{image_registry}}/nnd/tekton-cicd/bash:5.2.21"
     - name: MAVEN_IMAGE
-      value: "{{image_registry}}/nnd/tekton-cicd/maven:3.9.5-eclipse-temurin-$(params.java-version)"
+      value: "{{image_registry}}/nnd/tekton-cicd/maven:3.9.11-eclipse-temurin-$(params.java-version)"
     - name: CONTEXT_DIR
-      value: $(params.working-pr-dir)/$(params.code-repo-name)
+      value: $(params.working-pr-dir)/$(params.code-dir)
     - name: GOALS
       value:
       - surefire-report:report
@@ -239,7 +243,7 @@ spec:
       - "false"
     params:
     - name: CONTEXT_DIR
-      value: $(params.working-pr-dir)/$(params.code-repo-name)
+      value: $(params.working-pr-dir)/$(params.code-dir)
     - name: SONAR_HOST_URL
       value: "{{sonar_host_url_internal}}"
     - name: SONAR_PROJECT_KEY
@@ -308,9 +312,9 @@ spec:
     - name: BASH_IMAGE
       value: "{{image_registry}}/nnd/tekton-cicd/bash:5.2.21"
     - name: MAVEN_IMAGE
-      value: "{{image_registry}}/nnd/tekton-cicd/maven:3.9.5-eclipse-temurin-$(params.java-version)"
+      value: "{{image_registry}}/nnd/tekton-cicd/maven:3.9.11-eclipse-temurin-$(params.java-version)"
     - name: CONTEXT_DIR
-      value: $(params.working-pr-dir)/$(params.code-repo-name)
+      value: $(params.working-pr-dir)/$(params.code-dir)
     - name: GOALS
       value:
       - deploy
@@ -355,7 +359,7 @@ spec:
     - name: image
       value: "{{image_registry}}/nnd/tekton-cicd/bash:5.2.21"
     - name: path
-      value: $(params.working-pr-dir)/$(params.code-repo-name)/$(params.path-to-dockerfile)
+      value: $(params.working-pr-dir)/$(params.code-dir)/$(params.path-to-dockerfile)
     - name: contents
       value: |
         FROM {{image_registry}}/nnd/baseimage/eclipse-temurin:$(params.java-version)-jre
@@ -395,14 +399,14 @@ spec:
     params:
     - name: EXTRA_ARGS
       value:
-      - --tar-path=$(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-repo-name)/image.tar
+      - --tar-path=$(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-dir)/image.tar
       - --destination=$(params.app-image):latest
     - name: IMAGE
       value: $(params.app-image):$(params.cicd-auto-tag)
     - name: DOCKERFILE
-      value: $(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-repo-name)/$(params.path-to-dockerfile)
+      value: $(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-dir)/$(params.path-to-dockerfile)
     - name: CONTEXT
-      value: $(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-repo-name)
+      value: $(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-dir)
     - name: BUILDER_IMAGE
       value: "{{image_registry}}/nnd/tekton-cicd/kaniko@sha256:7af33c5e8b082a71ba3bf50859567fc4e0793188b02423c7beb58a8a0e299522"
     - name: BASH_IMAGE
@@ -444,7 +448,7 @@ spec:
       - --exit-code 0
       - --scanners vuln
       - --ignore-unfixed
-      - --input $(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-repo-name)/image.tar
+      - --input $(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-dir)/image.tar
     - name: TRIVY_IMAGE
       value: "{{image_registry}}/nnd/tekton-cicd/trivy:0.54.2"
     # - name: IMAGE
@@ -517,7 +521,7 @@ spec:
       value: |
         kustomize edit set image $(params.app-name)=$(params.app-image):$(params.cicd-auto-tag)
         cat kustomization.yaml
-        kustomize build > $(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-repo-name)/kubernetes.yaml
+        kustomize build > $(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-dir)/kubernetes.yaml
     runAfter:
     - gitops-fetch
     taskRef:
@@ -542,7 +546,7 @@ spec:
       - "false"
     params:
     - name: CONTEXT_DIR
-      value: $(params.working-pr-dir)/$(params.code-repo-name)
+      value: $(params.working-pr-dir)/$(params.code-dir)
     - name: IMAGE
       value: "{{image_registry}}/nnd/tekton-cicd/polaris:9.6"
     - name: SCRIPT
@@ -623,9 +627,9 @@ spec:
 
         BUILD_TAG=$(params.cicd-auto-tag)
 
-        rm -rf $(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-repo-name)/image.tar
-        cp $(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-repo-name)/$(params.path-to-dockerfile) .
-        cp $(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-repo-name)/kubernetes.yaml .
+        rm -rf $(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-dir)/image.tar
+        cp $(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-dir)/$(params.path-to-dockerfile) .
+        cp $(workspaces.source.path)/$(params.working-pr-dir)/$(params.code-dir)/kubernetes.yaml .
 
         echo $BUILD_TAG > README.md
         echo "artifactRepository=$(params.app-image):$BUILD_TAG" > ARTIFACT.txt
