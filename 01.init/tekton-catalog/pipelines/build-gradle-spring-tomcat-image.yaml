@@ -57,6 +57,12 @@ spec:
   - name: skip-image-scan
     default: "false"
     type: string
+  - name: skip-polaris-audit
+    default: "false"
+    type: string
+  - name: polaris-audit-flags
+    default: "--format=pretty --color=true --set-exit-code-on-danger"
+    type: string
   - name: skip-deploy-trigger
     default: "false"
     type: string
@@ -539,6 +545,36 @@ spec:
     workspaces:
     - name: source
       workspace: shared-data
+  - displayName: Polaris Audit
+    name: polaris-audit
+    when:
+    - input: $(params.skip-polaris-audit)
+      operator: in
+      values:
+      - "false"
+    params:
+    - name: CONTEXT_DIR
+      value: $(params.working-pr-dir)/$(params.code-repo-name)
+    - name: IMAGE
+      value: "{{image_registry}}/nnd/tekton-cicd/polaris:9.6"
+    - name: SCRIPT
+      value: |
+        polaris audit --audit-path ./kubernetes.yaml --quiet $(params.polaris-audit-flags)
+    runAfter:
+    - kustomize-build
+    taskRef:
+      kind: Task
+      params:
+      - name: kind
+        value: task
+      - name: name
+        value: polaris-audit
+      - name: namespace
+        value: tekton-catalog
+      resolver: cluster
+    workspaces:
+    - name: source
+      workspace: shared-data
   - displayName: CICD Repo Fetch
     name: cicd-fetch
     params:
@@ -557,7 +593,7 @@ spec:
     - name: revision
       value: main
     runAfter:
-    - kustomize-build
+    - polaris-audit
     taskRef:
       kind: Task
       params:
