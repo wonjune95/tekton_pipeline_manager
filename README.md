@@ -413,12 +413,13 @@ kubectl apply -f result/{project_name}/{org}-cicd/02-2.add-organization.yaml
 | 4 | maven-spring | VM SSH |
 | 5 | gradle-spring-boot | ArgoCD |
 | 6 | gradle-spring + tomcat | ArgoCD |
-| 7 | python-fastapi | ArgoCD |
-| 8 | maven-spring-library | Nexus 배포 (배포 클러스터 선택 없음) |
-| 9 | gradle-spring-library | Nexus 배포 (배포 클러스터 선택 없음) |
-| 10 | python-library (wheel/sdist) | Nexus 배포 (배포 클러스터 선택 없음) |
+| 7 | gradle-spring | VM SSH |
+| 8 | python-fastapi | ArgoCD |
+| 9 | maven-spring-library | Nexus 배포 (배포 클러스터 선택 없음) |
+| 10 | gradle-spring-library | Nexus 배포 (배포 클러스터 선택 없음) |
+| 11 | python-library (wheel/sdist) | Nexus 배포 (배포 클러스터 선택 없음) |
 
-> 뒤로가기는 **`0`** 입니다 (항목이 10개라 `9`를 유형에 사용).
+> 뒤로가기는 **`0`** 입니다 (항목이 11개라 `9`를 유형에 사용).
 > python 유형은 Harbor에 `{image_registry}/nnd/baseimage/python:{python-version}-slim` 이미지와
 > Nexus pypi 저장소가 준비되어 있어야 합니다.
 

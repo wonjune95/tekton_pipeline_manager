@@ -1,0 +1,85 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  labels:
+    app: {{application_name}}
+    env: {{env_menu}}
+    type: deploy
+  name: {{application_name}}-{{env_menu}}-deploy-pr
+  namespace: {{organization_name}}-cicd
+spec:
+  params:
+  - name: git-host-url
+    value: {{gitea_domain}}
+  - name: code-repo-org
+    value: {{organization_name}}
+  - name: code-repo-name
+    value: {{application_name}}
+  - name: code-repo-url
+    value: $(params.git-host-url)/$(params.code-repo-org)/$(params.code-repo-name).git
+  - name: server_hosts
+    value:
+{% for ip in vm_host %}
+      - "{{ip}}"
+{% endfor %}
+  - name: server_port
+    value: "22"
+  - name: server_user
+    value: tomcat
+  - name: source_file
+    value: "*.war"
+  - name: target_path
+    value: /app/tomcat/webapps
+  - name: pre_sftp_ssh_command
+    value: ls -l $(params.target_path);
+  - name: post_sftp_ssh_command
+    value: ls -l $(params.target_path);
+  - name: app-env
+    value: {{env_menu}}
+  - name: app-name
+    value: $(params.code-repo-name)
+  - name: skip-app-sync
+    value: "false"
+  - name: cicd-repo-org
+    value: $(params.code-repo-org)-cicd
+  - name: cicd-repo-name
+    value: $(params.code-repo-name)-$(params.app-env)
+  - name: cicd-repo-url
+    value: $(params.git-host-url)/$(params.code-repo-org)-cicd/$(params.code-repo-name)-$(params.app-env).git
+  - name: cicd-revision
+    value: main
+  pipelineRef:
+    params:
+    - name: kind
+      value: pipeline
+    - name: name
+      value: deploy-artifact-via-openssh-sftp
+    - name: namespace
+      value: tekton-catalog
+    resolver: cluster
+  status: PipelineRunPending
+  taskRunTemplate:
+    serviceAccountName: cicdbot
+  timeouts:
+    pipeline: 1h0m0s
+  workspaces:
+  - name: stored-data
+    persistentVolumeClaim:
+      claimName: cicdvol-shared-store-pvc
+    subPath: $(params.code-repo-name)
+  - name: shared-data
+    persistentVolumeClaim:
+      claimName: cicdvol-shared-local-pvc
+    subPath: $(params.code-repo-name)
+  - name: gitconfig
+    secret:
+      secretName: cicdbot-gitconfig-secret
+  - name: ssl-ca-directory
+    secret:
+      secretName: cicdssl-cacerts-secret
+  - name: ssh-credentials
+    secret:
+      secretName: cicdbot-sshkeypair-secret
+  - name: kubeconfig
+    secret:
+      secretName: cicdbot-kubeconfig-secret
