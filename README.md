@@ -88,7 +88,7 @@ tekton_pipeline_manager/
 ├── 01.init/                            ← Tekton 초기화 YAML 템플릿
 │   ├── tekton-catalog/                 ← 공통 Task / Pipeline
 │   │   ├── tasks/        (18개: build-1~6, deploy, kubernetes-cli 등)
-│   │   └── pipelines/    (14개: build-{maven,gradle,npm,python}-*, deploy-argocd 등)
+│   │   └── pipelines/    (17개: build-{maven,gradle,npm,python}-*, deploy-{argocd,artifact,compose} 등)
 │   ├── tekton-with-role/               ← Tekton 기본 RBAC / ServiceAccount
 │   ├── tekton-group-role/              ← Tekton 그룹 롤
 │   ├── argocd/                         ← ArgoCD 설정
@@ -106,6 +106,8 @@ tekton_pipeline_manager/
 │   ├── sample-maven-spring-vm-pipeline/
 │   ├── sample-gradle-boot-argo-pipeline/
 │   ├── sample-gradle-tomcat-argo-pipeline/
+│   ├── sample-gradle-spring-vm-pipeline/
+│   ├── sample-gradle-boot-compose-pipeline/ ← VM Docker Compose 배포
 │   ├── sample-python-fastapi-argo-pipeline/
 │   ├── sample-spring-library-pipeline/      ← 라이브러리 3종은 deploy-* 없음
 │   ├── sample-gradle-library-pipeline/
@@ -414,12 +416,13 @@ kubectl apply -f result/{project_name}/{org}-cicd/02-2.add-organization.yaml
 | 5 | gradle-spring-boot | ArgoCD |
 | 6 | gradle-spring + tomcat | ArgoCD |
 | 7 | gradle-spring | VM SSH |
-| 8 | python-fastapi | ArgoCD |
-| 9 | maven-spring-library | Nexus 배포 (배포 클러스터 선택 없음) |
-| 10 | gradle-spring-library | Nexus 배포 (배포 클러스터 선택 없음) |
-| 11 | python-library (wheel/sdist) | Nexus 배포 (배포 클러스터 선택 없음) |
+| 8 | gradle-spring-boot (이미지) | VM Docker Compose ([아래](#vm-docker-compose-배포-유형-8) 참고) |
+| 9 | python-fastapi | ArgoCD |
+| 10 | maven-spring-library | Nexus 배포 (배포 클러스터 선택 없음) |
+| 11 | gradle-spring-library | Nexus 배포 (배포 클러스터 선택 없음) |
+| 12 | python-library (wheel/sdist) | Nexus 배포 (배포 클러스터 선택 없음) |
 
-> 뒤로가기는 **`0`** 입니다 (항목이 11개라 `9`를 유형에 사용).
+> 뒤로가기는 **`0`** 입니다 (항목이 12개라 `9`를 유형에 사용).
 > python 유형은 Harbor에 `{image_registry}/nnd/baseimage/python:{python-version}-slim` 이미지와
 > Nexus pypi 저장소가 준비되어 있어야 합니다.
 
@@ -427,7 +430,43 @@ kubectl apply -f result/{project_name}/{org}-cicd/02-2.add-organization.yaml
 
 - **환경명**: `dev` / `stg` / `prod` (자유 입력, k8s 명명 규칙 적용)
 - **브랜치명**: 트리거할 git 브랜치 (예: `dev`, `main`)
-- **배포 클러스터**: 목록에서 선택 (유형 4·8·9·10은 제외)
+- **배포 클러스터**: 목록에서 선택 (VM 배포 4·7·8, 라이브러리 10·11·12는 제외)
+
+### VM Docker Compose 배포 (유형 8)
+
+`build-gradle-spring-boot-compose` → `deploy-compose-via-openssh` 파이프라인을 씁니다.
+
+1. 빌드: gradle 빌드 · 테스트 · Sonar · Nexus 업로드 → Dockerfile 생성 → kaniko 로 Harbor push → Trivy(보고만, `--exit-code 0`)
+2. CICD 저장소(`{org}-cicd/{app}-{env}`)에 앱의 compose 파일을 `compose.yml` 로, 이번 이미지 태그를 고정한 `compose.deploy.yml` 을 함께 push
+   ```yaml
+   services:
+     {compose-service}:          # 기본값 app-name
+       image: {app-image}:{빌드 태그}
+   ```
+3. 배포: 그 태그의 compose 파일 두 개를 VM `target_path` 에 sftp 로 올리고
+   `docker compose -f compose.yml -f compose.deploy.yml pull && ... up -d --no-build` 실행
+
+앱의 `compose.yml` 은 그대로 둬도 됩니다(`build:` 섹션이 있어도 `--no-build` 라 VM 에서 빌드하지 않음). 이전 CICD 태그로 배포를 돌리면 그 이미지로 롤백됩니다.
+
+**템플릿 기본값과 주요 파라미터**
+
+| 파라미터 | 기본값 | 설명 |
+|---|---|---|
+| `path-to-dockerfile` | `Dockerfile.cicd` | Dockerfile 생성 Task 는 같은 이름 파일이 있으면 덮어쓰지 않는다. 저장소 Dockerfile 과 겹치지 않게 다른 이름을 쓴다 |
+| `artifact-find-pattern` | `build/libs/*-SNAPSHOT.jar` | `-plain.jar` 가 잡히지 않게 |
+| `gradle-image` | `.../gradle:jdk{java-version}` | 태그가 없으면 직접 지정 (예: `gradle:8.10-jdk21`) |
+| `path-to-compose` / `compose-service` | `compose.yml` / app-name | 앱 저장소의 compose 파일과 이미지를 덮어쓸 서비스 |
+| `server_user` / `server_port` / `target_path` | `rocky` / `22` / `/app/{app}` | VM 접속 정보 (VM 주소는 init 의 `vm_host`) |
+| `ssh-image` | `.../ubuntu-openssh-client:jammy` | 배포 단계 이미지. ssh · sftp · bash 가 있으면 된다 |
+
+**사전 준비**
+
+- 앱 저장소 `.dockerignore` 에 `build` 가 있으면 `!build/libs/*.jar` 를 추가 (없으면 kaniko 가 jar 를 못 본다)
+- `{org}-cicd` 의 `cicdbot-sshkeypair-secret` 에 VM 접속 키 (`ssh-privatekey`, `ssh-publickey`)
+- VM
+  - docker compose v2 (podman 이면 `/usr/libexec/docker/cli-plugins/docker-compose` 플러그인 + `systemctl --user enable --now podman.socket` + `loginctl enable-linger {user}`)
+  - Harbor CA 신뢰: `/etc/containers/certs.d/{image_registry}/ca.crt` (docker 는 `/etc/docker/certs.d/`)
+  - `target_path` 와 그 아래 `.env` 를 미리 준비. 컨테이너가 쓰는 로그 디렉터리는 컨테이너 uid 로 소유자 지정 (rootless podman 은 `podman unshare chown`)
 
 ### 실행 후
 
@@ -521,7 +560,7 @@ sudo mkdir -p /CICD-DATA/local/{org}-cicd /CICD-DATA/store/{org}-cicd
 01.init/tekton-catalog/
 ├── tasks/         (build-1~6 단계별 task, deploy-{vm-ssh,zap}, kubernetes-cli)
 │                  build-2-{maven,gradle,npm,python}.yaml 이 언어별 빌드 task
-└── pipelines/     (build-{maven,gradle,npm,python}-*, deploy-argocd, deploy-artifact-via-openssh-sftp)
+└── pipelines/     (build-{maven,gradle,npm,python}-*, deploy-argocd, deploy-artifact-via-openssh-sftp, deploy-compose-via-openssh)
 ```
 
 **커스텀 절차**

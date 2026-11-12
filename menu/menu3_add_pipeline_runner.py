@@ -160,7 +160,7 @@ def manual_mode():
 # 파이프라인 유형 및 환경/브랜치/클러스터 선택
 # =========================
 def choice_pipeline(env_dict):
-    selection_list = ['','npm-argo','maven-boot-argo','maven-tomcat-argo','maven-spring-vm','gradle-boot-argo','gradle-tomcat-argo','gradle-spring-vm','python-fastapi-argo','spring-library','gradle-library','python-library']
+    selection_list = ['','npm-argo','maven-boot-argo','maven-tomcat-argo','maven-spring-vm','gradle-boot-argo','gradle-tomcat-argo','gradle-spring-vm','gradle-boot-compose','python-fastapi-argo','spring-library','gradle-library','python-library']
     result_path = f'./result/{env_dict["project_name"]}'
     env_dict['result_path'] = result_path
     init_file = f'{result_path}/{env_dict["project_name"]}-init_result.json'
@@ -177,10 +177,11 @@ def choice_pipeline(env_dict):
             {'key': '5', 'name': 'Backend', 'name_v': 7, 'name_w': 10, 'desc': 'build(gradle-boot) + deploy(argocd)', 'desc_v': 35},
             {'key': '6', 'name': 'Backend', 'name_v': 7, 'name_w': 10, 'desc': 'build(gradle-spring+tomcat) + deploy(argocd)', 'desc_v': 44},
             {'key': '7', 'name': 'Backend', 'name_v': 7, 'name_w': 10, 'desc': 'build(gradle-spring) + deploy(vm-ssh)', 'desc_v': 37},
-            {'key': '8', 'name': 'Backend', 'name_v': 7, 'name_w': 10, 'desc': 'build(python-fastapi) + deploy(argocd)', 'desc_v': 38},
-            {'key': '9', 'name': 'Library', 'name_v': 7, 'name_w': 10, 'desc': 'build(maven-spring-library)', 'desc_v': 27},
-            {'key': '10', 'name': 'Library', 'name_v': 7, 'name_w': 10, 'desc': 'build(gradle-spring-library)', 'desc_v': 28},
-            {'key': '11', 'name': 'Library', 'name_v': 7, 'name_w': 10, 'desc': 'build(python-library)', 'desc_v': 21},
+            {'key': '8', 'name': 'Backend', 'name_v': 7, 'name_w': 10, 'desc': 'build(gradle-boot) + deploy(vm-compose)', 'desc_v': 39},
+            {'key': '9', 'name': 'Backend', 'name_v': 7, 'name_w': 10, 'desc': 'build(python-fastapi) + deploy(argocd)', 'desc_v': 38},
+            {'key': '10', 'name': 'Library', 'name_v': 7, 'name_w': 10, 'desc': 'build(maven-spring-library)', 'desc_v': 27},
+            {'key': '11', 'name': 'Library', 'name_v': 7, 'name_w': 10, 'desc': 'build(gradle-spring-library)', 'desc_v': 28},
+            {'key': '12', 'name': 'Library', 'name_v': 7, 'name_w': 10, 'desc': 'build(python-library)', 'desc_v': 21},
             {'key': '0', 'name': '뒤로가기', 'name_v': 8},
         ])
         choice = input('\033[1;96m[ 메뉴를 선택하세요 ] ▶ \033[0m').strip()
@@ -200,7 +201,7 @@ def choice_pipeline(env_dict):
         if not branchVal:
             return '브랜치명을 입력해주세요.'
         env_dict['branch_menu'] = branchVal
-        if selection_list[int(choice)] not in ('maven-spring-vm', 'gradle-spring-vm', 'spring-library', 'gradle-library', 'python-library'):
+        if selection_list[int(choice)] not in ('maven-spring-vm', 'gradle-spring-vm', 'gradle-boot-compose', 'spring-library', 'gradle-library', 'python-library'):
             deploy_cluster = [k for k in data if k.endswith('deploy_cluster')]
             options = [inquirer.List("option", message="배포될 클러스터를 선택해 주세요", choices=deploy_cluster)]
             select = safe_prompt(options)
