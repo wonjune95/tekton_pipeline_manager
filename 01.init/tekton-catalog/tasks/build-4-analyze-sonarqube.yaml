@@ -88,8 +88,8 @@ spec:
   - default: registry.access.redhat.com/ubi8/ubi-minimal:8.2
     name: SONAR_PROP_IMAGE
     type: string
-  - default: "true"
-    description: Quality Gate 결과를 기다려 FAILED 면 task 실패
+  - default: "false"
+    description: 'true 면 Quality Gate 결과를 기다려 FAILED 일 때 task 를 실패시킨다(빌드 차단). 기본 false: 결과는 SonarQube 화면에서 보고 빌드는 계속'
     name: SONAR_QUALITYGATE_WAIT
     type: string
   - default: "true"

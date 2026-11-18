@@ -657,6 +657,7 @@ semgrep-scan → sonar-properties-create → sonar-scan
 ```
 
 - Semgrep 은 **검사만** 합니다. 탐지 결과(SARIF)를 SonarQube 가 외부 이슈로 함께 올리고, 통과·실패는 **SonarQube 품질게이트**가 정합니다.
+- 품질게이트 결과로 **빌드를 막지는 않습니다**(Task 파라미터 `SONAR_QUALITYGATE_WAIT` 기본 `"false"`). 품질게이트 FAILED 일 때 빌드를 실패시키려면 이 기본값을 `"true"` 로 바꿉니다.
 - Semgrep 단계는 **빌드를 막지 않습니다.** 스캔이 실패하면 로그에 크게 알리고 Semgrep 결과 없이 SonarQube 분석을 계속합니다.
   성공·실패는 TaskRun 결과 `semgrep-status`(ok · failed · disabled)로 남습니다.
 - **규칙은 Semgrep 이미지 안에 들어 있습니다** (`security-rules` 저장소의 `Dockerfile` 로 빌드, 이미지 태그 = 규칙 버전). 실행 중에 Gitea 에 접근하지 않습니다.
