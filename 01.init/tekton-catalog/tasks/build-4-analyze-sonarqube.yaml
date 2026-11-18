@@ -88,7 +88,155 @@ spec:
   - default: registry.access.redhat.com/ubi8/ubi-minimal:8.2
     name: SONAR_PROP_IMAGE
     type: string
+  - default: "true"
+    description: Quality Gate 결과를 기다려 FAILED 면 task 실패
+    name: SONAR_QUALITYGATE_WAIT
+    type: string
+  - default: "true"
+    description: SonarQube 분석 전에 Semgrep 보안점검(행안부 보안약점)을 돌리고, 결과(SARIF)를 SonarQube 로 함께 올린다. 판정은 SonarQube 품질게이트가 한다. 끄려면 Task 의 이 기본값을 false 로 바꾼다
+    name: SEMGREP_ENABLED
+    type: string
+  - default: rules
+    description: 규칙 저장소 기준 규칙 디렉터리. SonarQube 의 규칙 키에 이 경로가 들어가므로 바꾸면 오탐 처리 이력이 끊긴다
+    name: SEMGREP_RULES_PATH
+    type: string
+  - default: "900"
+    name: SEMGREP_TIMEOUT_SEC
+    type: string
+  - default: "{{image_registry}}/nnd/tekton-cicd/semgrep-mois:v0.7.0@sha256:d761e3b329a6e8cb4e8fb2eb03b64d1146cfeaf982ea6000bb23aeedd9ae7944"
+    description: Semgrep CE 1.180.0 + 행안부 규칙(security-rules v0.7.0, Java·Python·JS·TS)을 넣은 이미지 (security-rules 저장소의 Dockerfile 로 만든다, digest 로 고정)
+    name: SEMGREP_IMAGE
+    type: string
+  volumes:
+  - name: semgrep-out
+    emptyDir: {}
+  results:
+  - name: semgrep-status
+    description: Semgrep 보안점검 결과 — ok(스캔 성공), failed(스캔 실패 · 결과 없이 SonarQube 진행), disabled
   steps:
+  # Semgrep 보안점검. 탐지가 있어도 실패하지 않고 SARIF 를 /semgrep-out 에 남긴다.
+  # 스캔 자체가 실패하면(규칙 저장소·시간 초과·semgrep 오류) task 가 실패한다 — 점검이 빠진 채 넘어가지 않게.
+  - computeResources: {}
+    env:
+    - name: RULES_ROOT
+      value: /semgrep-rules
+    - name: RULES_PATH
+      value: $(params.SEMGREP_RULES_PATH)
+    - name: SRC_ROOT
+      value: $(workspaces.source.path)/$(params.CONTEXT_DIR)
+    - name: TARGET_PATH
+      value: "."
+    - name: OUT_DIR
+      value: /semgrep-out
+    - name: TIMEOUT_SEC
+      value: $(params.SEMGREP_TIMEOUT_SEC)
+    # 판정은 SonarQube 품질게이트가 한다. 보고서(report.py)는 로그용이라 기준치를 모두 무제한(-1)으로 둔다
+    - name: MAX_MOIS_BLOCK
+      value: "-1"
+    - name: MAX_MOIS_WARN
+      value: "-1"
+    - name: MAX_CVE_CRITICAL
+      value: "-1"
+    - name: MAX_CVE_HIGH
+      value: "-1"
+    - name: MAX_CVE_MEDIUM
+      value: "-1"
+    - name: CVE_REACHABLE_ONLY
+      value: "false"
+    - name: BASELINE_REF
+      value: ""
+    # 버전 확인·메트릭 전송 등 외부 호출을 끈다
+    - name: SEMGREP_ENABLE_VERSION_CHECK
+      value: "0"
+    - name: SEMGREP_SEND_METRICS
+      value: "off"
+    # git-clone(비root)이 만든 저장소를 root 인 semgrep 컨테이너에서 읽기 위함 (dubious ownership)
+    - name: GIT_CONFIG_COUNT
+      value: "1"
+    - name: GIT_CONFIG_KEY_0
+      value: safe.directory
+    - name: GIT_CONFIG_VALUE_0
+      value: "*"
+    - name: TZ
+      value: Asia/Seoul
+    image: $(params.SEMGREP_IMAGE)
+    name: semgrep-scan
+    volumeMounts:
+    - name: semgrep-out
+      mountPath: /semgrep-out
+    workingDir: $(workspaces.source.path)/$(params.CONTEXT_DIR)
+    script: |
+      #!/usr/bin/env bash
+      set -uo pipefail
+      if [ "$(params.SEMGREP_ENABLED)" != "true" ]; then
+        echo "[semgrep] SEMGREP_ENABLED=$(params.SEMGREP_ENABLED) — 건너뜀"
+        echo -n disabled > "$(results.semgrep-status.path)"
+        exit 0
+      fi
+      # Semgrep 은 검사만 한다. 이 단계의 어떤 실패도 빌드를 막지 않는다 (판정은 SonarQube 품질게이트).
+      # 실패하면 아래에서 크게 알리고, SonarQube 로 넘길 결과 없이 다음 단계로 간다.
+      (
+      set -e
+      fail() { echo "[semgrep] 실패: $*" >&2; exit 1; }
+      # 1) 규칙은 이미지 안(/semgrep-rules)에 들어 있다 — 폐쇄망에서도 외부 접근 없이 점검한다
+      echo "[semgrep] 규칙셋 $(cat "$RULES_ROOT/VERSION" 2>/dev/null || echo '버전 파일 없음') (이미지 $(params.SEMGREP_IMAGE))"
+      [ -f "$RULES_ROOT/scripts/report.py" ] || fail "이미지에 규칙이 없음 — SEMGREP_IMAGE 가 security-rules 의 Dockerfile 로 만든 이미지인지 확인"
+
+      # 2) 입력값·규칙 검사 → 스캔 (작업 디렉터리 = SonarQube 분석 기준 디렉터리. SARIF 의 파일 경로가 여기에 맞춰진다)
+      python3 "$RULES_ROOT/scripts/report.py" preflight
+      cd "$SRC_ROOT"
+      args=(scan --config "$RULES_ROOT/$RULES_PATH" --metrics=off --disable-version-check
+            --json -o "$OUT_DIR/semgrep.json" --sarif-output="$OUT_DIR/semgrep.raw.sarif")
+      echo "+ timeout $TIMEOUT_SEC semgrep ${args[*]} ."
+      rc=0
+      timeout "$TIMEOUT_SEC" semgrep "${args[@]}" . || rc=$?
+      case "$rc" in
+        0)       ;;
+        124|143) fail "${TIMEOUT_SEC}초 안에 끝나지 않음 (SEMGREP_TIMEOUT_SEC 확인)" ;;
+        *)       fail "semgrep 종료코드 $rc (위 로그 참고)" ;;
+      esac
+
+      # 3) 로그 보고서 (판정 없음)
+      mkdir -p "$OUT_DIR/results"
+      RESULTS_DIR="$OUT_DIR/results" python3 "$RULES_ROOT/scripts/report.py" report \
+        || echo "[semgrep] 보고서의 GATE 는 참고용이다 (파싱 오류가 있으면 FAIL 로 나온다). 판정은 SonarQube 가 한다"
+
+      # 4) SonarQube 용 SARIF. semgrep 의 열 위치는 바이트, SonarQube 는 문자 기준이라
+      #    한글이 있는 줄에서 가져오기가 실패한다 → 열 위치를 지우고 줄 번호만 남긴다
+      python3 - "$OUT_DIR/semgrep.raw.sarif" "$OUT_DIR/semgrep.sarif" "$OUT_DIR/sonar-inclusions.txt" <<'PY'
+      import json, sys
+      sarif = json.load(open(sys.argv[1], encoding='utf-8'))
+      n = 0
+      for run in sarif.get('runs', []):
+          for result in run.get('results', []):
+              n += 1
+              for loc in result.get('locations', []):
+                  region = loc.get('physicalLocation', {}).get('region', {})
+                  region.pop('startColumn', None)
+                  region.pop('endColumn', None)
+      json.dump(sarif, open(sys.argv[2], 'w', encoding='utf-8'), ensure_ascii=False)
+      # 탐지된 파일 목록. sonar.inclusions 가 걸린 파이프라인에서 이 파일들이 분석 대상에서 빠지면
+      # SonarQube 가 탐지를 프로젝트에 붙이고 파일·줄 위치를 잃는다 (MyBatis 매퍼 XML 등) → sonar-properties-create 가 덧붙인다
+      files = sorted({loc['physicalLocation']['artifactLocation']['uri']
+                      for run in sarif.get('runs', []) for result in run.get('results', [])
+                      for loc in result.get('locations', [])
+                      if loc.get('physicalLocation', {}).get('artifactLocation', {}).get('uri')})
+      files = [f for f in files if ',' not in f and '\n' not in f]
+      open(sys.argv[3], 'w', encoding='utf-8').write(','.join(files))
+      print(f'[semgrep] SonarQube 로 넘길 탐지 {n}건 (파일 {len(files)}개) → {sys.argv[2]}')
+      PY
+      )
+      rc=$?
+      # 성공·실패를 TaskRun 결과(semgrep-status)로 남긴다 — 빌드는 막지 않지만 "실패"와 "0건"을 구분해 볼 수 있게
+      if [ "$rc" = "0" ]; then echo -n ok > "$(results.semgrep-status.path)"; else echo -n failed > "$(results.semgrep-status.path)"; fi
+      if [ "$rc" != "0" ]; then
+        rm -f "$OUT_DIR/semgrep.sarif" "$OUT_DIR/sonar-inclusions.txt"
+        echo "================================================================"
+        echo "[semgrep] ★ 보안점검(Semgrep)을 끝내지 못했습니다 (종료코드 $rc, 위 로그 참고)."
+        echo "[semgrep]   빌드는 계속 진행하지만 이번 SonarQube 분석에는 Semgrep 결과가 없습니다."
+        echo "================================================================"
+      fi
+      exit 0
   - computeResources: {}
     env:
     - name: SONAR_HOST_URL
@@ -125,6 +273,9 @@ spec:
       value: $(params.SONAR_BRANCH_NAME) 
     image: $(params.SONAR_PROP_IMAGE)
     name: sonar-properties-create
+    volumeMounts:
+    - name: semgrep-out
+      mountPath: /semgrep-out
     script: |
       #!/usr/bin/env bash
 
@@ -188,7 +339,23 @@ spec:
           echo "sonar.organization=${SONAR_ORGANIZATION}" >> sonar-project.properties
         }
 
-        echo "sonar.sources=${SOURCE_TO_SCAN}" >> sonar-project.properties
+        # Semgrep 이 탐지한 파일(MyBatis 매퍼 XML, 분석 대상 폴더 밖 파일 등)을 SonarQube 분석 대상에 덧붙인다 — 빠지면 탐지가 파일·줄 위치를 잃는다.
+        # Java 파일은 sonar.java.binaries 가 있을 때만 덧붙인다 (없으면 SonarQube Java 분석이 실패해 빌드가 멈춘다 — npm 파이프라인 등)
+        SEMGREP_FILES_CSV=""
+        if [[ -s /semgrep-out/sonar-inclusions.txt ]]; then
+          SEMGREP_FILES_CSV="$(cat /semgrep-out/sonar-inclusions.txt)"
+          if [[ -z "${SONAR_JAVA_BINARIES}" ]]; then
+            SEMGREP_FILES_CSV="$(tr ',' '\n' <<< "${SEMGREP_FILES_CSV}" | grep -v '\.java$' | paste -sd, -)"
+          fi
+        fi
+        EXTRA_SOURCES=""
+        if [[ -n "${SEMGREP_FILES_CSV}" && "${SOURCE_TO_SCAN}" != "." && "${SOURCE_TO_SCAN}" != "./" ]]; then
+          IFS=',' read -ra SEMGREP_FILES <<< "${SEMGREP_FILES_CSV}"
+          for f in "${SEMGREP_FILES[@]}"; do
+            case "$f" in "${SOURCE_TO_SCAN%/}"/*) ;; *) EXTRA_SOURCES="${EXTRA_SOURCES},${f}" ;; esac
+          done
+        fi
+        echo "sonar.sources=${SOURCE_TO_SCAN}${EXTRA_SOURCES}" >> sonar-project.properties
 
         # for branch 
         [[ -n "${SONAR_BRANCH_NAME}" ]] && { 
@@ -209,7 +376,11 @@ spec:
           echo "sonar.language=${SONAR_LANGUAGE}" >> sonar-project.properties
         }
         [[ -n "${SONAR_INCLUSIONS}" ]] && {
-          echo "sonar.inclusions=${SONAR_INCLUSIONS}" >> sonar-project.properties
+          if [[ -n "${SEMGREP_FILES_CSV}" ]]; then
+            echo "sonar.inclusions=${SONAR_INCLUSIONS},${SEMGREP_FILES_CSV}" >> sonar-project.properties
+          else
+            echo "sonar.inclusions=${SONAR_INCLUSIONS}" >> sonar-project.properties
+          fi
         }
         [[ -n "${SONAR_EXCLUSIONS}" ]] && {
           echo "sonar.exclusions=${SONAR_EXCLUSIONS}" >> sonar-project.properties
@@ -250,6 +421,9 @@ spec:
     # - sonar-scanner
     image: $(params.SONAR_SCANNER_IMAGE)
     name: sonar-scan
+    volumeMounts:
+    - name: semgrep-out
+      mountPath: /semgrep-out
     workingDir: $(workspaces.source.path)/$(params.CONTEXT_DIR)
     script: |
       #!/usr/bin/env bash
@@ -261,7 +435,13 @@ spec:
         done
       fi
 
-      sonar-scanner
+      # Semgrep 결과가 있으면 외부 이슈로 함께 올린다 (semgrep-scan step 이 만든 파일)
+      SARIF_ARGS=()
+      if [ -s /semgrep-out/semgrep.sarif ]; then
+        SARIF_ARGS=(-Dsonar.sarifReportPaths=/semgrep-out/semgrep.sarif)
+      fi
+
+      sonar-scanner "${SARIF_ARGS[@]}" -Dsonar.qualitygate.wait=$(params.SONAR_QUALITYGATE_WAIT) -Dsonar.qualitygate.timeout=300
   workspaces:
   - description: Workspace containing the code which needs to be scanned by SonarQube
     name: source
@@ -276,4 +456,7 @@ spec:
     optional: true
   - description: Local repo (m2) workspace
     name: maven-local-repo
+    optional: true
+  - description: Semgrep 규칙 저장소 인증 (.git-credentials, .gitconfig — git-clone 과 같은 시크릿)
+    name: basic-auth
     optional: true
