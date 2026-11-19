@@ -245,7 +245,7 @@ Tekton/ArgoCD/Harbor/Nexus/Gitea/SonarQube의 계정·저장소를 자동 생성
 |------|------|
 | `01-1.init-basic.yaml` | Tekton 기본 (RBAC, ServiceAccount 등) |
 | `01-2.init-pipeline.yaml` | Tekton Catalog 전체 (공통 Task + Pipeline) |
-| `01-3.init-oauth.yaml` | OAuth 설정 |
+| `01-3.init-oauth.yaml` | OAuth 설정 (oauth2-proxy, Gitea 로그인) |
 | `01-4.init-argo.yaml` | ArgoCD 설정 |
 | `01-5.init-tekton-group-role.yaml` | Tekton 그룹 롤 |
 | `01-6.init-cluster.yaml` | 앱 클러스터(dev/stg/prod × be/fe) 초기 namespace/SC/secret |
@@ -291,6 +291,76 @@ kubectl apply -f result/{project_name}/01-6.init-cluster.yaml
 ```
 
 > Tekton RBAC가 적용된 환경에서는 CoreDNS에 Gitea 도메인 hosts 등록이 필요할 수 있습니다.
+
+### Tekton 대시보드 팀별 권한 (Gitea 팀 → Kubernetes 권한)
+
+Gitea 조직 `oauth_organization` 의 팀으로 대시보드 권한을 나눕니다. 바인딩은 `01-5.init-tekton-group-role.yaml` 에 들어 있습니다.
+
+| Gitea 팀 | ClusterRoleBinding | 권한 |
+|----------|--------------------|------|
+| `oauth_organization:admins` | `tekton-editor-global` | 조회 + 생성·수정·삭제 |
+| `oauth_organization:viewers` | `tekton-reviewer-global` | 조회만 |
+
+Kubernetes API 서버는 프록시가 붙여 주는 `X-Auth-Request-Groups` 같은 헤더를 믿지 않습니다. API 서버가 사용자의 Gitea 토큰을 직접 검증해야 팀 권한이 적용됩니다. 토큰이 API 서버까지 가지 않으면 모든 요청이 대시보드 ServiceAccount 권한으로 처리되어 **viewers 계정도 생성·삭제가 됩니다.** 아래 네 가지를 모두 맞춰야 합니다.
+
+**1. API 서버에 Gitea OIDC 등록** — 클러스터 쪽 작업입니다 (NKS는 콘솔의 "OIDC 인증 설정").
+
+| 항목 | 값 |
+|------|-----|
+| Issuer URL | `gitea_domain` 과 같은 값, 끝에 `/` 없이. **`https://` 주소만 가능** (Gitea 파드가 내부에서 http 여도 인그레스가 https 면 됨) |
+| Client ID | `oauth_client_id` |
+| Username claim | `preferred_username` |
+| Groups claim | `groups` |
+| Username / Groups prefix | 예: `gitea:` (아래 2번 참고) |
+| CA file | Gitea 인증서가 사설 CA 발급일 때만 필요. CA 인증서(`ca.crt`)만 넣고 개인키는 넣지 않음 |
+| Signing algs | `RS256` |
+
+**2. 그룹 이름 맞추기** — API 서버는 토큰의 그룹 이름 앞에 Groups prefix 를 붙여서 봅니다. prefix 가 `gitea:` 면 그룹은 `gitea:oauth_organization:admins` 가 됩니다.
+
+- `01-5` 의 바인딩은 prefix 없는 이름입니다. prefix 를 쓰면 적용 전에 두 바인딩의 `subjects[].name` 앞에 prefix 를 붙입니다.
+- ClusterRoleBinding `tekton-dashboard-tenant` 의 `subjects` 에 조직 그룹(`{prefix}oauth_organization`)을 추가합니다. 없으면 로그인해도 네임스페이스 목록 등 화면 공통 조회가 403 입니다.
+- prefix 를 비우면 Gitea 의 조직·팀 이름이 그대로 Kubernetes 그룹 이름이 됩니다. 일반 사용자가 조직을 만들 수 있는 Gitea 라면 prefix 를 두세요.
+- `tekton-dashboard-tenant-runners` 처럼 `kind: User` 로 계정을 직접 지정한 바인딩은 `{username prefix}{Gitea 계정}` 이름이어야 맞습니다.
+
+**3. oauth2-proxy 가 토큰을 대시보드로 넘기기** — `01-3.init-oauth.yaml` 의 oauth2-proxy 설정에 아래 3줄이 들어 있습니다.
+
+```
+pass_authorization_header=true          # Gitea ID 토큰을 Authorization 헤더로 대시보드에 전달
+scope="openid email profile groups"     # 토큰에 조직/팀 목록(groups)을 넣게 함
+cookie_refresh="30m"                    # Gitea 토큰은 1시간짜리. 없으면 로그인 1시간 뒤 401
+```
+
+> ⚠️ `pass_authorization_header` 는 oauth2-proxy 가 대시보드 앞에서 **직접 프록시**할 때만 동작합니다.
+> 템플릿 기본 구조(Traefik ForwardAuth — oauth2-proxy 는 인증 판정만 하고 요청은 Traefik 이 대시보드로 보냄)에서는 토큰이 실리지 않습니다.
+> 팀 권한을 쓰려면 `01-3` 적용 전에 두 군데를 고칩니다.
+>
+> ```yaml
+> # ConfigMap oauth2-proxy-gitea 의 cfg 에 추가
+> upstreams=["http://tekton-dashboard.tekton-pipelines.svc.cluster.local:9097"]
+> skip_provider_button=true   # 선택. 로그인 버튼 화면 없이 바로 Gitea 로 이동
+>
+> # HTTPRoute tekton-route: filters 는 redirect-to-https 만 남기고, backendRefs 를 oauth2-proxy 로 변경
+>       backendRefs:
+>         - name: oauth2-proxy
+>           port: 4180
+> ```
+
+**4. 기존 사용자는 Gitea 에서 앱 승인을 다시** — `scope` 에 `groups` 를 넣기 전에 로그인한 적 있는 계정은 예전 승인 범위가 남아 있어 토큰에 그룹이 빠집니다. 계정마다 Gitea → 설정 → 애플리케이션 → 승인된 OAuth2 애플리케이션에서 이 앱을 취소하고 다시 로그인합니다.
+
+**확인**
+
+```bash
+# 바인딩 확인 (prefix 가 gitea: 인 경우)
+kubectl auth can-i create pipelineruns.tekton.dev -n {조직}-cicd --as=test --as-group=gitea:oauth_organization:viewers   # no
+kubectl auth can-i create pipelineruns.tekton.dev -n {조직}-cicd --as=test --as-group=gitea:oauth_organization:admins    # yes
+```
+
+| 증상 | 원인 |
+|------|------|
+| viewers 계정인데 생성·삭제가 됨 | 토큰이 대시보드까지 가지 않음 (3번). 대시보드 ServiceAccount 권한으로 처리되는 중 |
+| 로그인 후 모든 조회가 401 | API 서버 OIDC 미설정, 또는 Issuer URL·Client ID·CA 불일치 (1번) |
+| 로그인 후 모든 조회가 403 | 토큰에 그룹이 없음 (4번), 또는 그룹 이름·prefix 불일치 (2번) |
+| 로그인 1시간 뒤부터 401 | `cookie_refresh` 누락 |
 
 ---
 
