@@ -87,7 +87,7 @@ tekton_pipeline_manager/
 │
 ├── 01.init/                            ← Tekton 초기화 YAML 템플릿
 │   ├── tekton-catalog/                 ← 공통 Task / Pipeline
-│   │   ├── tasks/        (18개: build-1~6, deploy, kubernetes-cli 등)
+│   │   ├── tasks/        (19개: build-1~6, deploy, kubernetes-cli 등)
 │   │   └── pipelines/    (17개: build-{maven,gradle,npm,python}-*, deploy-{argocd,artifact,compose} 등)
 │   ├── tekton-with-role/               ← Tekton 기본 RBAC / ServiceAccount
 │   ├── tekton-group-role/              ← Tekton 그룹 롤
@@ -650,7 +650,17 @@ kubectl apply -f my-sonarqube-scanner-custom.yaml -n tekton-catalog
 
 ## Semgrep 보안점검 (행안부 보안약점)
 
-`code-analysis` 단계(Task `sonarqube-scanner`)는 SonarQube 분석 전에 Semgrep 을 먼저 돌립니다. 항상 켜져 있습니다.
+Task `sonarqube-semgrep-scanner` (`tasks/build-4-analyze-sonarqube-semgrep.yaml`)는 기존 `sonarqube-scanner` 에 Semgrep 단계를 더한 Task 입니다.
+SonarQube 만 쓰는 기존 `sonarqube-scanner` (`tasks/build-4-analyze-sonarqube.yaml`)는 그대로 있고, 파이프라인은 기본으로 기존 Task 를 씁니다.
+
+Semgrep 을 쓰려면 파이프라인의 `code-analysis` 단계에서 Task 이름만 바꿉니다. 파라미터·워크스페이스는 같습니다.
+
+```yaml
+    taskRef:
+      ...
+      - name: name
+        value: sonarqube-semgrep-scanner   # 기존: sonarqube-scanner
+```
 
 ```
 semgrep-scan → sonar-properties-create → sonar-scan
