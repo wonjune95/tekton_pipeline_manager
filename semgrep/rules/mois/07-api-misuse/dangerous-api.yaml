@@ -1,0 +1,45 @@
+rules:
+- id: mois-7-02-dangerous-api
+  languages: [java]
+  severity: WARNING
+  message: "[행안부 API 오용] 취약한 API 사용: 웹 응용프로그램에서 System.exit() 등으로 프로세스를 끝내거나 소켓을 직접 다룸 — 컨테이너가 종료될 수 있고 프레임워크 보안기능을 쓰지 못하니 제공 API(URLConnection·HTTP 클라이언트 등)를 쓸 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "API 오용"
+    mois-item-no: "7-2"
+    mois-item: "취약한 API 사용"
+    cwe: "CWE-676; CWE-242; CWE-246; CWE-382"
+    gate: warn
+  pattern-either:
+    # 프로세스 종료 (CWE-382) — 독립 실행 main() 은 제외
+    - patterns:
+        - pattern-either:
+            - pattern: System.exit(...)
+            - pattern: Runtime.getRuntime().exit(...)
+            - pattern: Runtime.getRuntime().halt(...)
+            # 전체 이름으로 쓴 경우 (docs/rule-conventions.md 3절)
+            - pattern: java.lang.System.exit(...)
+            - pattern: java.lang.Runtime.getRuntime().exit(...)
+            - pattern: java.lang.Runtime.getRuntime().halt(...)
+        - pattern-not-inside: |
+            public static void main(String[] $ARGS) { ... }
+    # 서블릿·Spring 빈에서 소켓을 직접 사용 (CWE-246)
+    - patterns:
+        - pattern-either:
+            - pattern-inside: |
+                class $C extends javax.servlet.http.HttpServlet { ... }
+            - pattern-inside: |
+                class $C extends jakarta.servlet.http.HttpServlet { ... }
+            - patterns:
+                # 인자 없는 애너테이션(@Service)도 이 형태에 맞는다
+                - pattern-inside: |
+                    @$STEREO(...)
+                    class $C { ... }
+                - metavariable-regex:
+                    metavariable: $STEREO
+                    regex: ^(Controller|RestController|Service|Component|Repository)$
+        - pattern-either:
+            - pattern: new java.net.Socket(...)
+            - pattern: new java.net.ServerSocket(...)
+            - pattern: new java.net.DatagramSocket(...)

@@ -1,0 +1,48 @@
+rules:
+- id: mois-4-01-error-message-exposure
+  languages: [java]
+  severity: WARNING
+  message: "[행안부 에러처리] 오류 메시지 정보노출: 예외 정보(스택 트레이스·예외 메시지)를 콘솔·HTTP 응답으로 출력함 — 사용자에게는 정해진 오류 코드만 주고 상세 내용은 로거로 남길 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "에러처리"
+    mois-item-no: "4-1"
+    mois-item: "오류 메시지 정보노출"
+    cwe: "CWE-209"
+    gate: warn
+  pattern-either:
+    # 스택 트레이스 출력 (6-2 디버그 코드에서는 다루지 않는다)
+    - pattern: $E.printStackTrace(...)
+    # 잡은 예외(또는 @ExceptionHandler 의 예외 인자)를 콘솔·응답으로 내보냄
+    - patterns:
+        - pattern-either:
+            # try-with-resources·catch 여러 개도 이 형태로 잡힌다. finally 가 붙은 try 만 따로 둔다
+            - pattern-inside: |
+                try { ... } catch ($T $E) { ... }
+            - pattern-inside: |
+                try { ... } catch ($T $E) { ... } finally { ... }
+            # 인자 없는 @ExceptionHandler 도 이 형태에 맞는다
+            - pattern-inside: |
+                @ExceptionHandler(...)
+                $RET $M(..., $T $E, ...) { ... }
+        - pattern-either:
+            - patterns:
+                - pattern: System.$OUT.$PRINT(..., <... $E ...>, ...)
+                - metavariable-regex:
+                    metavariable: $OUT
+                    regex: ^(out|err)$
+            - patterns:
+                - pattern-either:
+                    - pattern: $RESP.getWriter().$PRINT(..., <... $E ...>, ...)
+                    - pattern: (java.io.PrintWriter $W).$PRINT(..., <... $E ...>, ...)
+                    - pattern: (javax.servlet.jsp.JspWriter $W).$PRINT(..., <... $E ...>, ...)
+                    - pattern: (jakarta.servlet.jsp.JspWriter $W).$PRINT(..., <... $E ...>, ...)
+                - metavariable-regex:
+                    metavariable: $PRINT
+                    regex: ^(print|println|printf|format|write|append)$
+            - pattern: $RESP.sendError($CODE, <... $E ...>)
+            - pattern: ResponseEntity.$STATUS(...).body(<... $E ...>)
+            # new ResponseEntity<>(...)·new ResponseEntity<String>(...) 모두 이 형태에 맞는다
+            - pattern: new ResponseEntity(<... $E ...>, ...)
+            - pattern: $MODEL.addAttribute($KEY, <... $E ...>)

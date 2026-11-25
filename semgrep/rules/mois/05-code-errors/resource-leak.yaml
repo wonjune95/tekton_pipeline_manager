@@ -1,0 +1,61 @@
+rules:
+- id: mois-5-02-resource-leak
+  languages: [java]
+  severity: WARNING
+  message: "[행안부 코드오류] 부적절한 자원 해제: 파일 스트림·DB 연결을 지역 변수로 열고 finally 나 try-with-resources 로 닫지 않음 — 예외가 나도 반드시 해제되도록 할 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "코드오류"
+    mois-item-no: "5-2"
+    mois-item: "부적절한 자원 해제"
+    cwe: "CWE-404"
+    gate: warn
+  patterns:
+    # 지역 변수(같은 메서드에서 선언한 변수)에 담은 자원. `$R = ...;` 는 선언문(`T r = ...;`)과 대입문 모두에 맞는다
+    - pattern-inside: |
+        $DT $R = $DI;
+        ...
+    - pattern-either:
+        # 파일 스트림 (BufferedReader 등으로 감싼 경우 포함)
+        - patterns:
+            - pattern-either:
+                - pattern: $R = new $C(...);
+                - pattern: $R = new $W(<... new $C(...) ...>, ...);
+            - metavariable-regex:
+                metavariable: $C
+                regex: ^(java\.(io|util\.zip|util\.jar)\.)?(FileInputStream|FileOutputStream|FileReader|FileWriter|RandomAccessFile|ZipFile|JarFile)$
+        # DriverManager 연결
+        - pattern: $R = java.sql.DriverManager.getConnection(...);
+        # NIO 스트림
+        - patterns:
+            - pattern: $R = java.nio.file.Files.$NIO(...);
+            - metavariable-regex:
+                metavariable: $NIO
+                regex: ^(newInputStream|newOutputStream|newBufferedReader|newBufferedWriter)$
+    # try-with-resources 의 자원 선언은 위 형태(문장)에 맞지 않으므로 따로 제외하지 않아도 된다
+    # 뒤따르는 try 의 finally 에서 같은 자원을 닫음 (`try { } finally { }` 는 catch 가 있는 try 에도 맞는다)
+    - pattern-not-inside: |
+        $RT $R = $RI;
+        ...
+        try { ... } finally { ... $R.close(); ... }
+    # finally 에서 같은 자원을 해제 함수에 넘김 (IOUtils.closeQuietly(in), closeAll(in, out), JdbcUtils.closeConnection(conn) 등).
+    # 이름에 close·release 가 들어간 호출만 인정한다 — finally 에서 로그에 넘기는 것은 해제가 아니다
+    - pattern-not-inside:
+        patterns:
+          - pattern: |
+              $RT $R = $RI;
+              ...
+              try { ... } finally { ... $CLOSER(..., $R, ...); ... }
+          - metavariable-regex:
+              metavariable: $CLOSER
+              regex: (?i).*(close|release).*
+    # 자원을 돌려주거나 필드로 넘기면 해제는 받는 쪽 몫 (진단가이드 오탐 예)
+    - pattern-not-inside: |
+        $R = $RI;
+        ...
+        return $R;
+    - pattern-not-inside: |
+        $R = $RI;
+        ...
+        this.$FIELD = $R;

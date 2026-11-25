@@ -1,0 +1,102 @@
+rules:
+- id: mois-6-01-shared-field-in-singleton-js
+  languages: [javascript, typescript]
+  severity: WARNING
+  message: "[행안부 캡슐화] 잘못된 세션에 의한 데이터 정보 노출: 요청 처리 함수가 함수 밖(모듈)에 선언한 변수나 싱글톤(NestJS @Controller·@Injectable)의 필드에 값을 대입함 — 모든 요청·사용자가 같은 변수를 공유하므로 다른 사용자의 데이터가 섞일 수 있으니 지역 변수나 세션(req.session)·요청 범위 객체를 쓸 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "캡슐화"
+    mois-item-no: "6-1"
+    mois-item: "잘못된 세션에 의한 데이터 정보 노출"
+    cwe: "CWE-488; CWE-543"
+    gate: warn
+  pattern-either:
+    # (1) 요청 처리 함수(첫 매개변수가 req·request·ctx)에서, 그 함수 밖에 let·var 로 선언한 변수에 대입.
+    #     함수 밖 선언은 모듈 수준이든 라우터를 만드는 함수 안이든 모든 요청이 공유한다.
+    #     const 로 선언한 Map·배열의 내용 변경(캐시)은 보지 않는다
+    - patterns:
+        - pattern-either:
+            - pattern-inside: |
+                let $V = $INIT;
+                ...
+            - pattern-inside: |
+                let $V;
+                ...
+            - pattern-inside: |
+                var $V = $INIT;
+                ...
+            - pattern-inside: |
+                var $V;
+                ...
+        - pattern-either:
+            - pattern-inside: |
+                function $H($REQ, ...) { ... }
+            - pattern-inside: |
+                ($REQ, ...) => { ... }
+            - pattern-inside: |
+                $H($REQ, ...) { ... }
+        - metavariable-regex:
+            metavariable: $REQ
+            regex: ^(req|request|ctx)$
+        # 요청 처리 함수 안(안쪽 블록·안쪽 함수 포함)에서 같은 이름을 선언했으면 지역 변수다 (선언문 자체도 여기서 빠진다)
+        - pattern-not-inside:
+            patterns:
+              - pattern-either:
+                  - pattern: |
+                      let $V = $X;
+                      ...
+                  - pattern: |
+                      let $V;
+                      ...
+                  - pattern: |
+                      var $V = $X;
+                      ...
+                  - pattern: |
+                      var $V;
+                      ...
+                  - pattern: |
+                      const $V = $X;
+                      ...
+              - pattern-either:
+                  - pattern-inside: |
+                      function $H($REQ, ...) { ... }
+                  - pattern-inside: |
+                      ($REQ, ...) => { ... }
+                  - pattern-inside: |
+                      $H($REQ, ...) { ... }
+        - pattern-either:
+            - pattern: $V = $VAL
+            - pattern: $V += $VAL
+            - pattern: $V -= $VAL
+            - pattern: $V++
+            - pattern: ++$V
+            - pattern: $V--
+    # (2) NestJS 컨트롤러·프로바이더는 기본이 싱글톤이다: 생성자·초기화 훅이 아닌 메서드에서 this.필드에 대입.
+    #     요청 범위(@Injectable({ scope: Scope.REQUEST }))로 선언한 것은 제외
+    - patterns:
+        # Angular 의 @Injectable 서비스는 브라우저(사용자 한 명) 안의 싱글톤이라 제외한다 — @nestjs/common 을 가져오는 파일만
+        - pattern-inside:
+            pattern-regex: (?s)\A.*from\s+['"]@nestjs/common['"].*\z
+        - pattern-either:
+            - pattern-inside: |
+                @Controller(...)
+                class $C { ... }
+            - pattern-inside: |
+                @Injectable(...)
+                class $C { ... }
+        - pattern-not-inside: |
+            @Injectable({..., scope: Scope.REQUEST, ...})
+            class $C { ... }
+        - pattern-not-inside: |
+            @Controller({..., scope: Scope.REQUEST, ...})
+            class $C { ... }
+        - pattern-inside: |
+            $M(...) { ... }
+        - metavariable-regex:
+            metavariable: $M
+            regex: ^(?!(constructor|onModuleInit|onApplicationBootstrap|onModuleDestroy)$)
+        - pattern-either:
+            - pattern: this.$F = $VAL
+            - pattern: this.$F += $VAL
+            - pattern: this.$F++

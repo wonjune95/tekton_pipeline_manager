@@ -1,0 +1,28 @@
+rules:
+- id: mois-4-02-empty-catch
+  languages: [java]
+  severity: WARNING
+  message: "[행안부 에러처리] 오류상황 대응 부재: 예외를 잡고 아무 처리도 하지 않음"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "에러처리"
+    mois-item-no: "4-2"
+    mois-item: "오류상황 대응 부재"
+    cwe: "CWE-390"
+    gate: warn
+  pattern-either:
+    # try-with-resources·catch 여러 개·다중 타입 catch 도 이 형태로 잡힌다
+    - pattern: |
+        try {
+          ...
+        } catch ($T $E) {
+        }
+    # finally 가 붙은 try 는 위 형태에 맞지 않으므로 따로 둔다
+    - pattern: |
+        try {
+          ...
+        } catch ($T $E) {
+        } finally {
+          ...
+        }

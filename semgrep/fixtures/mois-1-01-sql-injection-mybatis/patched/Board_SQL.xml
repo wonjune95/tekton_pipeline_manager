@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE sqlMap PUBLIC "-//ibatis.apache.org//DTD SQL Map 2.0//EN" "http://ibatis.apache.org/dtd/sql-map-2.dtd">
+<sqlMap namespace="Board">
+  <select id="boardDAO.selectBoardList" parameterClass="boardVO" resultClass="egovMap">
+    <!-- ok: mois-1-01-sql-injection-mybatis — #…# 는 바인딩 변수 -->
+    SELECT ntt_id, ntt_sj FROM tb_board WHERE ntt_sj LIKE '%' || #searchKeyword# || '%'
+  </select>
+  <select id="boardDAO.selectBoardListByCondition" parameterClass="boardVO" resultClass="egovMap">
+    SELECT ntt_id, ntt_sj, TO_CHAR(fee, '$999,999') AS fee FROM tb_board
+    <dynamic prepend="WHERE">
+      <isNotEmpty property="searchKeyword">ntt_sj = #searchKeyword:VARCHAR#</isNotEmpty>
+      <iterate prepend="AND ntt_id IN" property="nttIds" open="(" close=")" conjunction=",">#nttIds[]#</iterate>
+    </dynamic>
+    <!-- 예전 정렬 (주석): ORDER BY $sortColumn$ -->
+    ORDER BY ntt_id DESC
+  </select>
+</sqlMap>

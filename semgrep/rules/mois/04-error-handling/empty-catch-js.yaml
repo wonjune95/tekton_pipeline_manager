@@ -1,0 +1,29 @@
+rules:
+- id: mois-4-02-empty-catch-js
+  languages: [javascript, typescript]
+  severity: WARNING
+  message: "[행안부 에러처리] 오류상황 대응 부재: 오류를 잡고 아무 처리도 하지 않음(빈 catch 블록, .catch(() => {})) — 로그를 남기고 복구하거나, 처리할 수 없으면 다시 던질 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "에러처리"
+    mois-item-no: "4-2"
+    mois-item: "오류상황 대응 부재"
+    cwe: "CWE-390"
+    gate: warn
+  pattern-either:
+    # catch (e) {} 와 catch {} 모두 이 형태에 맞는다. 주석만 든 catch 도 빈 블록이다
+    - pattern: |
+        try { ... } catch ($E) {}
+    # finally 가 붙은 try 는 위 형태에 맞지 않으므로 따로 둔다
+    - pattern: |
+        try { ... } catch ($E) {} finally { ... }
+    # Promise 오류 처리기의 본문이 비어 있음
+    - pattern: $P.catch(() => {})
+    - pattern: $P.catch(($E) => {})
+    - pattern: $P.catch(function () {})
+    - pattern: $P.catch(function ($E) {})
+    - pattern: $P.then($OK, () => {})
+    - pattern: $P.then($OK, ($E) => {})
+    - pattern: $P.then($OK, function () {})
+    - pattern: $P.then($OK, function ($E) {})

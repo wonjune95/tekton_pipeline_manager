@@ -1,0 +1,335 @@
+rules:
+- id: mois-5-01-null-dereference-py
+  languages: [python]
+  severity: WARNING
+  message: "[행안부 코드오류] Null Pointer 역참조: None 일 수 있는 값(re.match·dict.get·os.environ.get·first()·find() 결과)을 검사 없이 사용함 — 사용하기 전에 None 여부를 확인하거나 기본값을 줄 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "코드오류"
+    mois-item-no: "5-1"
+    mois-item: "Null Pointer 역참조"
+    cwe: "CWE-476"
+    gate: warn
+  # "빠져나간 if 문 뒤" 형태가 if 의 마지막 문장이 return·raise 일 때만 맞도록 한다 (안쪽 조건부 return 은 중단이 아니다)
+  options:
+    go_deeper_stmt: false
+  pattern-either:
+    # (1) None 을 돌려줄 수 있는 호출 결과를 바로 역참조
+    # 정규식 매치: re.match(p, s).group(1), PATTERN.search(s).groups()
+    - patterns:
+        - pattern: $RE.$FN(...).$G(...)
+        - metavariable-regex:
+            metavariable: $FN
+            regex: ^(match|search|fullmatch)$
+        - metavariable-regex:
+            metavariable: $G
+            regex: ^(group|groups|groupdict|start|end|span)$
+    - patterns:
+        - pattern: re.$FN(...)[$I]
+        - metavariable-regex:
+            metavariable: $FN
+            regex: ^(match|search|fullmatch)$
+    # 기본값 없는 dict.get(k): d.get(k).strip(), request.GET.get("q").lower(), os.environ.get("X").split(",")
+    # (HTTP 클라이언트의 get(url)·ORM 의 objects.get(...) 은 None 을 돌려주지 않으므로 제외. $K 는 키워드 인자 get(pk=1) 에는 맞지 않는다)
+    - patterns:
+        - pattern-either:
+            # 이름으로 알 수 없는 HTTP 세션(session.get(url).json())은 응답 객체의 속성 이름으로 제외한다
+            - patterns:
+                - pattern: $D.get($K).$M
+                - metavariable-regex:
+                    metavariable: $M
+                    regex: ^(?!(json|text|content|status_code|raise_for_status|ok|headers|cookies|url|iter_content|iter_lines|history|elapsed)$).*$
+            - pattern: $D.get($K)[$I]
+        - metavariable-regex:
+            metavariable: $D
+            regex: ^(?!(requests|httpx)$)(?!.*\.objects$)(?!(?i:.*(client|http|api))$).*$
+    - pattern: os.getenv($K).$M
+    - pattern: os.getenv($K)[$I]
+    # ORM 조회 결과: Model.objects.filter(...).first().name, session.query(M).filter_by(...).one_or_none().id
+    - patterns:
+        - pattern-either:
+            - pattern: $Q.$ORM(...).$FIRST().$A
+            - pattern: $MODEL.objects.$FIRST().$A
+            - pattern: $MODEL.query.$FIRST().$A
+        - metavariable-regex:
+            metavariable: $FIRST
+            regex: ^(first|last|one_or_none|scalar_one_or_none)$
+    - pattern: $COLL.find_one(...).$A
+    - pattern: $COLL.find_one(...)[$I]
+    # XML·HTML 탐색: root.find("tag").text, soup.find("a").get("href")
+    - patterns:
+        - pattern: $NODE.find(...).$A
+        - metavariable-regex:
+            metavariable: $A
+            regex: ^(text|tail|tag|attrib|attrs|string|get|get_text|find|findall|find_all)$
+    # (2) 변수에 담은 뒤 None 검사 없이 사용
+    - patterns:
+        - pattern-either:
+            - patterns:
+                - pattern-inside: |
+                    $X = re.$FN(...)
+                    ...
+                - metavariable-regex:
+                    metavariable: $FN
+                    regex: ^(match|search|fullmatch)$
+            # 컴파일한 정규식: m = PATTERN.search(s) 뒤의 m.group(...)
+            - patterns:
+                - pattern-inside: |
+                    $X = $PAT.$FN(...)
+                    ...
+                - metavariable-regex:
+                    metavariable: $FN
+                    regex: ^(match|search|fullmatch)$
+                - pattern: $X.$G
+                - metavariable-regex:
+                    metavariable: $G
+                    regex: ^(group|groups|groupdict|start|end|span)$
+            - pattern-inside: |
+                $X = os.environ.get($K)
+                ...
+            - pattern-inside: |
+                $X = os.getenv($K)
+                ...
+            - patterns:
+                - pattern-inside: |
+                    $X = $REQ.$ATTR.get($K)
+                    ...
+                - metavariable-regex:
+                    metavariable: $REQ
+                    regex: ^(request|req|self\.request|flask\.request)$
+            - patterns:
+                - pattern-either:
+                    - pattern-inside: |
+                        $X = $Q.$ORM(...).$FIRST()
+                        ...
+                    - pattern-inside: |
+                        $X = $MODEL.objects.$FIRST()
+                        ...
+                    - pattern-inside: |
+                        $X = $MODEL.query.$FIRST()
+                        ...
+                - metavariable-regex:
+                    metavariable: $FIRST
+                    regex: ^(first|last|one_or_none|scalar_one_or_none)$
+            - pattern-inside: |
+                $X = $COLL.find_one(...)
+                ...
+        - pattern-either:
+            - pattern: $X.$M
+            - pattern: $X[$I]
+        # None 검사는 "검사 결과에 따라 실제로 갈리는" 경우만 인정한다 (docs/rule-conventions.md 1절).
+        # 조건식에 변수가 나오기만 하는 if(if len(x) > 3:), 검사만 하고 계속 진행하는 if, 반대 분기에서의 사용은 탐지한다
+        # (가) 값이 있을 때만 들어가는 분기 안: if x: / if x is not None: / if a and x: 의 then 쪽.
+        #      조건식은 통째로 이 모양이어야 한다 (if flag | (x is not None): · if (x is not None) == flag: 는 맞지 않는다).
+        #      if 본문에서 그 변수에 다시 대입하면(if m: m = P.match(other); m.group()) 검사한 값이 아니므로 인정하지 않는다
+        #      (while 은 본문 끝의 재대입을 조건이 다시 검사하므로 그대로 둔다)
+        - pattern-not-inside:
+            patterns:
+              - patterns:
+                  - pattern-either:
+                      - pattern: |
+                          if $X:
+                              $...THEN
+                      - pattern: |
+                          if $X is not None:
+                              $...THEN
+                      - pattern: |
+                          if $X and $GB:
+                              $...THEN
+                      - pattern: |
+                          if $GA and $X:
+                              $...THEN
+                      - pattern: |
+                          if $GA and $X and $GB:
+                              $...THEN
+                      - pattern: |
+                          if $X is not None and $GB:
+                              $...THEN
+                      - pattern: |
+                          if $GA and $X is not None and $GB:
+                              $...THEN
+                      - pattern: |
+                          if $GA and $X is not None:
+                              $...THEN
+                      - pattern: |
+                          while $X:
+                              $...THEN
+                      - pattern: |
+                          while $X is not None:
+                              $...THEN
+                  - pattern-not: |
+                      if $GC:
+                          ...
+                          $X = $GV
+                          ...
+              - focus-metavariable: $...THEN
+        # (나) None 인지 검사한 if 의 else 쪽 (else 본문에서 다시 대입하면 인정하지 않는다)
+        - pattern-not-inside:
+            patterns:
+              - patterns:
+                  - pattern-either:
+                      - pattern: |
+                          if $X is None:
+                              ...
+                          else:
+                              $...ELSE
+                      - pattern: |
+                          if not $X:
+                              ...
+                          else:
+                              $...ELSE
+                  - pattern-not: |
+                      if $GC:
+                          ...
+                      else:
+                          ...
+                          $X = $GV
+                          ...
+              - focus-metavariable: $...ELSE
+        # (다) None 이면 빠져나간 if 문 "뒤" (규약 1절 v2 형태). 실패 분기 안, 안쪽 조건부 return, 검사 뒤 재대입은 인정하지 않는다.
+        #      검사식을 감싸는 식은 or 뿐이어야 한다 (x is None or …). and · & · not (not x) · == flag · 호출 인자 안의 검사는
+        #      "None 이면 중단" 이 아니다 ($GWRAP 은 검사식을 품은 모든 식 — 자신 포함 — 에 맞는다).
+        #      종료 함수는 import 로 확인되는 flask.abort · sys.exit 만 본다 (내장 exit()·quit() · 이름만 abort 인 함수는 종료로 보지 않는다)
+        - pattern-not-inside:
+            patterns:
+              - pattern-either:
+                  # 'return ...' 은 값 없는 return 에도 맞는다
+                  - pattern-inside: |
+                      if $COND:
+                          ...
+                          return ...
+                      ...
+                  - pattern-inside: |
+                      if $COND:
+                          ...
+                          raise ...
+                      ...
+                  - pattern-inside: |
+                      if $COND:
+                          ...
+                          continue
+                      ...
+                  - pattern-inside: |
+                      if $COND:
+                          ...
+                          break
+                      ...
+                  - pattern-inside: |
+                      if $COND:
+                          ...
+                          flask.abort(...)
+                      ...
+                  - pattern-inside: |
+                      if $COND:
+                          ...
+                          sys.exit(...)
+                      ...
+              - metavariable-pattern:
+                  metavariable: $COND
+                  patterns:
+                    - pattern-either:
+                        - pattern: $X is None
+                        - pattern: not $X
+                    - pattern-not-inside:
+                        patterns:
+                          - pattern: $GWRAP
+                          - pattern-not: $GOR1 or $GOR2
+                          - pattern-not: $X is None
+                          - pattern-not: not $X
+              - pattern-not-inside: |
+                  if $COND:
+                      ...
+              - pattern-not-inside: |
+                  if $COND:
+                      ...
+                  ...
+                  $X = $GV
+                  ...
+              - pattern-either:
+                  - pattern: $X.$GM
+                  - pattern: $X[$GI]
+        # (라) 조건식·and·or·assert
+        - pattern-not-inside:
+            patterns:
+              - pattern-either:
+                  - pattern: $YES if $X else $NO
+                  - pattern: $YES if $X is not None else $NO
+              - focus-metavariable: $YES
+        - pattern-not-inside:
+            patterns:
+              - pattern-either:
+                  - pattern: $YES if $X is None else $NO
+                  - pattern: $YES if not $X else $NO
+              - focus-metavariable: $NO
+        # and·or 는 검사 "뒤"(오른쪽)에 오는 식만 보호한다 — m.group(1) and m and flag 의 m.group(1) 은 검사보다 먼저 실행된다
+        - pattern-not-inside:
+            patterns:
+              - pattern-either:
+                  - pattern: $X and $G1
+                  - pattern: $GA and $X and $G1
+                  - pattern: $X is not None and $G1
+                  - pattern: $X is None or $G1
+                  - pattern: not $X or $G1
+              - focus-metavariable: $G1
+        # 'assert $X, ...' 은 메시지 없는 assert 에도 맞는다
+        - pattern-not-inside: |
+            assert $X, ...
+            ...
+        - pattern-not-inside: |
+            assert $X is not None, ...
+            ...
+        # AttributeError·TypeError 를 잡아 처리하는 경우(EAFP) — try **본문** 안의 사용만 제외한다
+        # (except·else·finally 본문에서의 사용은 그 try 가 잡아 주지 않는다).
+        # 'except ...' 은 except E / except E as e / except (A, B) / except: 에 모두 맞지만, else·finally 가 붙은 try 는 별개의 형태다.
+        # 잡는 예외의 종류는 가리지 못한다 (except KeyError: 여도 제외된다 — 알려진 한계)
+        - pattern-not-inside:
+            patterns:
+              - pattern-either:
+                  - pattern: |
+                      try:
+                          $...GTRY
+                      except ...:
+                          ...
+                  - pattern: |
+                      try:
+                          $...GTRY
+                      except ...:
+                          ...
+                      else:
+                          ...
+                  - pattern: |
+                      try:
+                          $...GTRY
+                      except ...:
+                          ...
+                      finally:
+                          ...
+                  - pattern: |
+                      try:
+                          $...GTRY
+                      except ...:
+                          ...
+                      else:
+                          ...
+                      finally:
+                          ...
+              - focus-metavariable: $...GTRY
+        # None 이 아닌 값으로 다시 대입한 "뒤"의 사용 (x = x or "기본값"). 다시 대입한 값이 또 None 을 돌려줄 수 있는 호출이면 인정하지 않는다.
+        # 그 대입보다 앞에서 쓴 곳, 그 뒤에 또 대입한 경우(무엇이 마지막 값인지 알 수 없다)는 제외하지 않는다
+        - pattern-not-inside:
+            patterns:
+              - pattern-inside: |
+                  $X = $OTHER
+                  ...
+              - pattern-not-inside: |
+                  $X = $OTHER
+                  ...
+                  $X = $GLATER
+                  ...
+              - pattern-either:
+                  - pattern: $X.$GM
+                  - pattern: $X[$GI]
+              - metavariable-regex:
+                  metavariable: $OTHER
+                  regex: (?s)^(?!.*\.(match|search|fullmatch|first|last|one_or_none|scalar_one_or_none|find_one)\()(?!.*\bgetenv\()(?!.*\.get\([^,()]*\)\s*$).*$

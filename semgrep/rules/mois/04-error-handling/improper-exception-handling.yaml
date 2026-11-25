@@ -1,0 +1,35 @@
+rules:
+- id: mois-4-03-improper-exception-handling
+  languages: [java]
+  severity: WARNING
+  message: "[행안부 에러처리] 부적절한 예외 처리: 광범위한 예외(Exception·Throwable·RuntimeException)를 잡거나 실패를 알리는 반환값(File.delete 등)을 검사하지 않음 — 발생 가능한 예외를 구체적으로 나눠 처리하고 반환값을 확인할 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "에러처리"
+    mois-item-no: "4-3"
+    mois-item: "부적절한 예외 처리"
+    cwe: "CWE-754"
+    gate: warn
+  pattern-either:
+    # 광범위한 예외 처리 (빈 catch 는 4-2 에서 따로 탐지)
+    - patterns:
+        - pattern-either:
+            # try-with-resources·catch 여러 개도 이 형태로 잡힌다. finally 가 붙은 try 만 따로 둔다
+            - pattern: try { ... } catch ($T $E) { ... }
+            - pattern: try { ... } catch ($T $E) { ... } finally { ... }
+        - metavariable-regex:
+            metavariable: $T
+            regex: ^(java\.lang\.)?(Exception|Throwable|RuntimeException)$
+        - focus-metavariable: $T
+    # 실패를 boolean 으로 알리는 파일 API 의 반환값을 버림
+    - patterns:
+        - pattern: (java.io.File $F).$OP(...);
+        # `식;` 패턴은 대입·return·다른 호출의 인자 안에 있는 호출에도 맞으므로, 반환값을 쓰는 문장은 뺀다
+        # (`$V = $INIT;` 는 선언문에도, `$FN(...)` 은 `객체.메서드(...)` 에도 맞는다)
+        - pattern-not: $V = $INIT;
+        - pattern-not: return $RV;
+        - pattern-not: $FN(..., <... $F.$OP(...) ...>, ...);
+        - metavariable-regex:
+            metavariable: $OP
+            regex: ^(delete|mkdir|mkdirs|createNewFile|renameTo)$

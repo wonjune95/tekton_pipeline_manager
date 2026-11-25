@@ -1,0 +1,53 @@
+rules:
+- id: mois-6-04-public-data-to-private-array-py
+  languages: [python]
+  severity: WARNING
+  message: "[행안부 캡슐화] Private 배열에 Public 데이터 할당: 공개 메서드·생성자가 인자로 받은 list·dict·set 을 비공개 속성(_이름·__이름)에 그대로 저장함 — 호출자가 계속 바꿀 수 있으니 복사본(list(...)·dict(...)·copy.deepcopy)을 만들어 저장할 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "캡슐화"
+    mois-item-no: "6-4"
+    mois-item: "Private 배열에 Public 데이터 할당"
+    cwe: "CWE-496"
+    gate: warn
+  patterns:
+    - pattern-either:
+        # 타입 힌트로 가변 컬렉션임을 알 수 있는 인자 (기본값이 있는 인자 '$P: $T = None' 에도 맞는다)
+        - patterns:
+            - pattern-inside: |
+                def $M(self, ..., $P: $T, ...):
+                    ...
+            - metavariable-regex:
+                metavariable: $T
+                regex: ^(typing\.)?(Optional\[)?(typing\.)?(list|dict|set|bytearray|List|Dict|Set|MutableSequence|MutableMapping|MutableSet|DefaultDict|Deque)\b
+        # 타입 힌트는 없지만 같은 속성이 __init__ 에서 가변 컬렉션으로 초기화된 경우
+        - patterns:
+            - pattern-inside: |
+                class $C(...):
+                    ...
+                    def __init__(self, ...):
+                        ...
+                        self.$F = $INIT
+                        ...
+                    ...
+            - metavariable-pattern:
+                metavariable: $INIT
+                pattern-either:
+                  - pattern: "[...]"
+                  - pattern: "{...}"
+                  - pattern: list(...)
+                  - pattern: dict(...)
+                  - pattern: set(...)
+            # 기본값이 있는 인자($P=None)에도 맞는다
+            - pattern-inside: |
+                def $M(self, ..., $P, ...):
+                    ...
+    # 공개 메서드 또는 생성자
+    - metavariable-regex:
+        metavariable: $M
+        regex: ^(__init__$|[A-Za-z])
+    - pattern: self.$F = $P
+    - metavariable-regex:
+        metavariable: $F
+        regex: ^_

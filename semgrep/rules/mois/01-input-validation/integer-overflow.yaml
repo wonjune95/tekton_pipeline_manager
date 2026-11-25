@@ -1,0 +1,189 @@
+rules:
+- id: mois-1-14-integer-overflow
+  mode: taint
+  languages: [java]
+  severity: WARNING
+  message: "[행안부 입력데이터 검증 및 표현] 정수형 오버플로우: 외부 입력값을 범위 검사 없이 배열 크기로 사용함 — 음수·최댓값을 검사한 뒤 사용할 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "입력데이터 검증 및 표현"
+    mois-item-no: "1-14"
+    mois-item: "정수형 오버플로우"
+    cwe: "CWE-190"
+    gate: warn
+  # guard 판정을 엄격하게: "{ ... return/throw }" 가 실패 분기의 마지막 문장일 때만 맞도록 한다.
+  # (기본값이면 분기 안쪽 깊숙한 곳의 조건부 return 까지 "중단"으로 맞아 버린다)
+  options:
+    go_deeper_stmt: false
+  # 공통 source 블록(scratchpad/src-block/common-sources.yaml) + 정수형 Spring 파라미터.
+  # 공통 블록은 삽입 계열을 위해 숫자형 파라미터를 빼므로, 이 항목에서는 정수형 파라미터를 따로 더한다.
+  pattern-sources:
+    - patterns:
+        - pattern-either:
+            - pattern: (javax.servlet.http.HttpServletRequest $REQ).$GET(...)
+            - pattern: (jakarta.servlet.http.HttpServletRequest $REQ).$GET(...)
+        - metavariable-regex:
+            metavariable: $GET
+            regex: ^(getParameter|getParameterValues|getParameterMap|getParameterNames|getHeader|getHeaders|getHeaderNames|getQueryString|getRequestURI|getRequestURL|getPathInfo|getCookies|getInputStream|getReader|getPart|getParts)$
+    - pattern: (javax.servlet.http.Cookie $CK).getValue()
+    - pattern: (jakarta.servlet.http.Cookie $CK).getValue()
+    # 요청을 감싼 표준 객체: Spring 멀티파트·WebRequest, cos MultipartRequest, 업로드 파일의 원본 이름
+    - patterns:
+        - pattern-either:
+            - pattern: (org.springframework.web.multipart.MultipartHttpServletRequest $REQ).$GET(...)
+            - pattern: (org.springframework.web.multipart.MultipartRequest $REQ).$GET(...)
+            - pattern: (org.springframework.web.context.request.WebRequest $REQ).$GET(...)
+            - pattern: (org.springframework.web.context.request.NativeWebRequest $REQ).$GET(...)
+            - pattern: (com.oreilly.servlet.MultipartRequest $REQ).$GET(...)
+            - pattern: (javax.servlet.ServletRequest $REQ).$GET(...)
+            - pattern: (jakarta.servlet.ServletRequest $REQ).$GET(...)
+        - metavariable-regex:
+            metavariable: $GET
+            regex: ^(getParameter|getParameterValues|getParameterMap|getParameterNames|getHeader|getHeaderValues|getHeaderNames|getFilesystemName|getOriginalFileName|getFileNames|getInputStream|getReader)$
+    - pattern: (org.springframework.web.multipart.MultipartFile $MF).getOriginalFilename()
+    - patterns:
+        - pattern-either:
+            - pattern: $RET $M(..., @$A(...) $T $P, ...) { ... }
+            - pattern: $RET $M(..., @$A $T $P, ...) { ... }
+        - metavariable-regex:
+            metavariable: $A
+            regex: ^(RequestParam|PathVariable|RequestHeader|CookieValue|RequestBody|ModelAttribute|MatrixVariable)$
+        - metavariable-regex:
+            metavariable: $T
+            regex: ^(?!(int|long|short|byte|double|float|boolean|Integer|Long|Short|Byte|Double|Float|Boolean|BigDecimal|BigInteger|UUID|LocalDate|LocalDateTime)$).*
+        - focus-metavariable: $P
+    # Spring MVC 는 애너테이션이 없는 핸들러 매개변수도 요청 값으로 채운다 (단순형은 요청 파라미터, 객체는 폼 바인딩).
+    # 숫자·날짜형과 프레임워크가 넣어 주는 객체(요청·응답·세션·모델 등), 요청과 무관한 애너테이션은 제외
+    - patterns:
+        - pattern-either:
+            - pattern: |
+                @$MAP(...)
+                $RET $M(..., $T $P, ...) { ... }
+            - pattern: |
+                @$MAP
+                $RET $M(..., $T $P, ...) { ... }
+        - metavariable-regex:
+            metavariable: $MAP
+            regex: ^(RequestMapping|GetMapping|PostMapping|PutMapping|PatchMapping|DeleteMapping)$
+        - metavariable-regex:
+            metavariable: $T
+            regex: ^(?!(int|long|short|byte|double|float|boolean|char|Integer|Long|Short|Byte|Double|Float|Boolean|Character|BigDecimal|BigInteger|UUID|LocalDate|LocalDateTime|Date|HttpServletRequest|HttpServletResponse|ServletRequest|ServletResponse|HttpSession|Model|ModelMap|ModelAndView|Map|BindingResult|Errors|Locale|TimeZone|Principal|Authentication|RedirectAttributes|SessionStatus|UriComponentsBuilder|Pageable|Sort|WebRequest|NativeWebRequest|InputStream|OutputStream|Reader|Writer|HttpMethod)\b).*
+        # 애너테이션이 붙은 매개변수는 여기서 보지 않는다. 요청 바인딩 애너테이션은 위 항목, 검증 애너테이션은 아래 항목이 본다.
+        # 그 밖의 애너테이션(@AuthenticationPrincipal, 직접 만든 @CurrentUser 등)은 요청 값이 아니라 프레임워크·리졸버가 넣는 값이다
+        - pattern-not: $RET $M(..., @$ANN(...) $T $P, ...) { ... }
+        - focus-metavariable: $P
+    # 검증 애너테이션만 붙은 핸들러 매개변수(@Valid MemberForm form)도 요청 값으로 채워진다
+    - patterns:
+        - pattern: |
+            @$MAP(...)
+            $RET $M(..., @$VA(...) $T $P, ...) { ... }
+        - metavariable-regex:
+            metavariable: $MAP
+            regex: ^(RequestMapping|GetMapping|PostMapping|PutMapping|PatchMapping|DeleteMapping)$
+        - metavariable-regex:
+            metavariable: $VA
+            regex: ^(Valid|Validated|NotNull|NotBlank|NotEmpty|Size|Pattern|Length|Email|Nullable|NonNull)$
+        - metavariable-regex:
+            metavariable: $T
+            regex: ^(?!(int|long|short|byte|double|float|boolean|char|Integer|Long|Short|Byte|Double|Float|Boolean|Character|BigDecimal|BigInteger|UUID|LocalDate|LocalDateTime|Date|HttpServletRequest|HttpServletResponse|ServletRequest|ServletResponse|HttpSession|Model|ModelMap|ModelAndView|Map|BindingResult|Errors|Locale|TimeZone|Principal|Authentication|RedirectAttributes|SessionStatus|UriComponentsBuilder|Pageable|Sort|WebRequest|NativeWebRequest|InputStream|OutputStream|Reader|Writer|HttpMethod)\b).*
+        - focus-metavariable: $P
+    - patterns:
+        # `@$A(...)` 는 인자 없는 애너테이션(@RequestParam int size)에도 맞는다 (docs/rule-conventions.md 4절)
+        - pattern: $RET $M(..., @$A(...) $T $P, ...) { ... }
+        - metavariable-regex:
+            metavariable: $A
+            regex: ^(RequestParam|PathVariable|RequestHeader|CookieValue|MatrixVariable)$
+        - metavariable-regex:
+            metavariable: $T
+            regex: ^(int|long|short|Integer|Long|Short)$
+        - focus-metavariable: $P
+  pattern-sanitizers:
+    # 범위 검사는 "상한을 넘으면 중단" 또는 "상한 아래일 때만 사용"하는 guard 일 때만 인정한다 (docs/rule-conventions.md 1절).
+    # 비교식이 있기만 한 경우, 하한만 검사한 경우(n < 0), 실패해도 계속 진행하는 경우, 반대 분기에서 쓰는 경우는 탐지된다.
+    # (1) 실패 시 중단: if (n < 0 || n > MAX) { ... return/throw } 뒤에 오는 n.
+    #     by-side-effect 로 쓰면 `if (n > 0) { return new byte[n]; }` 처럼 조건 본문 안에서 쓰는 코드까지
+    #     정화되므로, if 문 "뒤"의 $X 만 정화한다. 본문 안에서의 사용과 검사 뒤에 다시 대입한 경우는 뺀다.
+    - patterns:
+        - pattern-either:
+            - pattern-inside: |
+                if ($COND) { ... return ...; }
+                ...
+            - pattern-inside: |
+                if ($COND) { ... throw $E; }
+                ...
+            - pattern-inside: |
+                if ($COND) return ...;
+                ...
+            - pattern-inside: |
+                if ($COND) throw $E;
+                ...
+        - metavariable-pattern:
+            metavariable: $COND
+            patterns:
+              - pattern-either:
+                  - pattern: $X > $Y
+                  - pattern: $X >= $Y
+                  - pattern: $Y < $X
+                  - pattern: $Y <= $X
+              # 검사식을 감싸는 식은 || 뿐이어야 한다 (n < 0 || n > MAX). &&·&·^·?:·!(…)·== false·호출 인자처럼
+              # 다른 식 안에 들어 있으면 "상한 초과 = 중단" 이 아니다. $WRAP 은 검사식을 품은 모든 식(검사식 자신 포함)에 맞는다
+              - pattern-not-inside:
+                  patterns:
+                    - pattern: $WRAP
+                    - pattern-not: $OR1 || $OR2
+                    - pattern-not: $X > $Y
+                    - pattern-not: $X >= $Y
+                    - pattern-not: $Y < $X
+                    - pattern-not: $Y <= $X
+        - pattern-not-inside: |
+            if ($COND) $S;
+        - pattern-not-inside: |
+            if ($COND) $S;
+            ...
+            $X = $V;
+            ...
+        - pattern-not-inside: |
+            if ($COND) $S;
+            ...
+            $X += $V;
+            ...
+        - pattern: $X
+    # (2) 조건 안에서만 사용: if (n >= 0 && n <= MAX) { new T[n] }
+    #     검사식을 감싸는 식은 && 뿐이어야 한다 (||·|·^·?:·!(…)·== false 등은 검사가 거짓이어도 본문에 들어온다).
+    #     else 가 있거나, 조건식 안에서 쓰거나(검사보다 먼저 실행될 수 있다), 본문에서 다시 대입하면 인정하지 않는다
+    - patterns:
+        - pattern-inside: |
+            if ($COND) $S;
+        - metavariable-pattern:
+            metavariable: $COND
+            patterns:
+              - pattern-either:
+                  - pattern: $X < $Y
+                  - pattern: $X <= $Y
+                  - pattern: $Y > $X
+                  - pattern: $Y >= $X
+              - pattern-not-inside:
+                  patterns:
+                    - pattern: $WRAP
+                    - pattern-not: $AND1 && $AND2
+                    - pattern-not: $X < $Y
+                    - pattern-not: $X <= $Y
+                    - pattern-not: $Y > $X
+                    - pattern-not: $Y >= $X
+        - pattern-not-inside: $COND
+        - pattern-not-inside: |
+            if ($C) $S1; else $S2;
+        - pattern-not-inside: |
+            if ($COND) { ... $X = $V; ... }
+        - pattern-not-inside: |
+            if ($COND) { ... $X += $V; ... }
+        - pattern: $X
+    # 상한을 정하는 함수 (반환값을 써야 한다)
+    - pattern: Math.min(...)
+    - pattern: Math.clamp(...)
+  pattern-sinks:
+    # 배열 생성식의 크기(모든 차원). 초기화 목록으로 만드는 배열(new T[] {a, b})은 크기를 입력이 정하지 않으므로 뺀다
+    - patterns:
+        - pattern: new $T[...]
+        - pattern-not: new $T[] {...}

@@ -1,0 +1,54 @@
+rules:
+- id: mois-2-04-weak-hash-py
+  languages: [python]
+  severity: WARNING
+  message: "[행안부 보안기능] 취약한 암호화 알고리즘 사용: MD5·SHA-1 해시 — SHA-256 이상(hashlib.sha256 등)을 사용할 것 (보안 용도가 아니면 usedforsecurity=False 로 표시하거나 예외 처리)"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "보안기능"
+    mois-item-no: "2-4"
+    mois-item: "취약한 암호화 알고리즘 사용"
+    cwe: "CWE-327"
+    gate: warn
+  pattern-either:
+    - patterns:
+        - pattern-either:
+            - pattern: hashlib.md5(...)
+            - pattern: hashlib.sha1(...)
+        - pattern-not: hashlib.$H(..., usedforsecurity=False, ...)
+    # HMAC 의 해시 함수로 넘기는 경우
+    - pattern: hmac.new($K, $MSG, hashlib.md5, ...)
+    - pattern: hmac.new($K, $MSG, hashlib.sha1, ...)
+    - pattern: hmac.new(..., digestmod=hashlib.md5, ...)
+    - pattern: hmac.new(..., digestmod=hashlib.sha1, ...)
+    # 해시 이름을 문자열로 넘기는 경우: hashlib.new("md5"), hmac.new(key, msg, "sha1")
+    - patterns:
+        - pattern-either:
+            - patterns:
+                - pattern: hashlib.new("$H", ...)
+                - pattern-not: hashlib.new(..., usedforsecurity=False, ...)
+            - pattern: hmac.new($K, $MSG, "$H", ...)
+            - pattern: hmac.new(..., digestmod="$H", ...)
+            - pattern: hmac.digest($K, $MSG, "$H")
+        - metavariable-regex:
+            metavariable: $H
+            regex: (?i)^(md2|md4|md5|sha-?1|sha)$
+    # PyCryptodome
+    - pattern: Crypto.Hash.MD2.new(...)
+    - pattern: Crypto.Hash.MD4.new(...)
+    - pattern: Crypto.Hash.MD5.new(...)
+    - pattern: Crypto.Hash.SHA.new(...)
+    - pattern: Crypto.Hash.SHA1.new(...)
+    - pattern: Cryptodome.Hash.MD5.new(...)
+    - pattern: Cryptodome.Hash.SHA1.new(...)
+    # cryptography
+    - pattern: cryptography.hazmat.primitives.hashes.MD5(...)
+    - pattern: cryptography.hazmat.primitives.hashes.SHA1(...)
+    # Django 비밀번호 해셔 설정
+    - patterns:
+        - pattern: PASSWORD_HASHERS = [..., "$HASHER", ...]
+        - metavariable-regex:
+            metavariable: $HASHER
+            regex: ^.*\.(MD5|SHA1|UnsaltedMD5|UnsaltedSHA1|Crypt)PasswordHasher$
+        - focus-metavariable: $HASHER

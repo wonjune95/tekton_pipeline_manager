@@ -1,0 +1,53 @@
+rules:
+- id: mois-2-11-improper-cert-validation-js
+  languages: [javascript, typescript]
+  severity: ERROR
+  message: "[행안부 보안기능] 부적절한 인증서 유효성 검증: 서버 인증서나 호스트 이름을 검증하지 않음(rejectUnauthorized: false·NODE_TLS_REJECT_UNAUTHORIZED=0·checkServerIdentity 무력화 등) — 검증을 켠 기본값을 쓰고, 사설 인증서는 ca 옵션(또는 NODE_EXTRA_CA_CERTS)으로 신뢰 저장소에 등록할 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "보안기능"
+    mois-item-no: "2-11"
+    mois-item: "부적절한 인증서 유효성 검증"
+    cwe: "CWE-295"
+    gate: block
+  # rejectUnauthorized·checkServerIdentity·strictSSL 은 Node TLS(https·tls·axios httpsAgent·pg·mysql2·nodemailer·ws)·request 전용 옵션 이름이라
+  # 어느 객체에 있든 본다. 설정 파일·변수로 끄는 경우는 놓침
+  pattern-either:
+    - pattern: |
+        {..., rejectUnauthorized: false, ...}
+    - pattern: $O.rejectUnauthorized = false
+    # request 라이브러리
+    - pattern: |
+        {..., strictSSL: false, ...}
+    # 프로세스 전체의 인증서 검증을 끔
+    - patterns:
+        - pattern-either:
+            - pattern: process.env.NODE_TLS_REJECT_UNAUTHORIZED = $V
+            - pattern: process.env["NODE_TLS_REJECT_UNAUTHORIZED"] = $V
+        - metavariable-regex:
+            metavariable: $V
+            regex: ^["'`]?0["'`]?$
+    # 호스트 이름 검증을 무력화: 항상 undefined(통과)를 돌려주는 checkServerIdentity
+    # (함수 값인 객체 항목은 식 패턴·$FN 메타변수로 잡히지 않는다 → 그 객체 안의 키 이름 위치를 보고한다)
+    - patterns:
+        - pattern-either:
+            - pattern-inside: |
+                {..., checkServerIdentity: (...) => undefined, ...}
+            - pattern-inside: |
+                {..., checkServerIdentity: (...) => null, ...}
+            - pattern-inside: |
+                {..., checkServerIdentity: (...) => {}, ...}
+            - pattern-inside: |
+                {..., checkServerIdentity: (...) => { return; }, ...}
+            - pattern-inside: |
+                {..., checkServerIdentity: (...) => { return undefined; }, ...}
+            - pattern-inside: |
+                {..., checkServerIdentity: function (...) {}, ...}
+            - pattern-inside: |
+                {..., checkServerIdentity: function (...) { return; }, ...}
+            - pattern-inside: |
+                {..., checkServerIdentity: function (...) { return undefined; }, ...}
+        - pattern-regex: '\bcheckServerIdentity\s*:'
+    # superagent
+    - pattern: $REQ.disableTLSCerts()

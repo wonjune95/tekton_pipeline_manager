@@ -1,0 +1,38 @@
+rules:
+- id: mois-2-10-improper-signature-verification-js
+  languages: [javascript, typescript]
+  severity: WARNING
+  message: "[행안부 보안기능] 부적절한 전자서명 확인: 서명 없는 토큰(alg=none)을 허용하거나 서명 검증 결과를 쓰지 않음 — JWT 는 jwt.verify(token, key, { algorithms: ['HS256'·'RS256' 등] })로 서명을 검증하고('none' 금지), 서명 검증 결과(false·예외)는 반드시 거부로 처리할 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "보안기능"
+    mois-item-no: "2-10"
+    mois-item: "부적절한 전자서명 확인"
+    cwe: "CWE-347"
+    gate: warn
+  # 참고: semgrep-rules javascript/jsonwebtoken/security/jwt-none-alg.yaml
+  # jwt.decode()(서명 미검증 디코드)는 검증 전에 헤더(kid)를 읽는 정상 용도가 많고, 검증이 다른 계층에 있는지 알 수 없어 보지 않는다
+  pattern-either:
+    # 서명 없는 토큰(alg=none)을 허용·발급 (jsonwebtoken)
+    - patterns:
+        - pattern-either:
+            - pattern: |
+                $JWT.verify($T, $K, {..., algorithms: [..., "$ALG", ...], ...}, ...)
+            - pattern: |
+                $JWT.sign($P, $K, {..., algorithm: "$ALG", ...}, ...)
+        - metavariable-regex:
+            metavariable: $ALG
+            regex: (?i)^none$
+    # jose: 서명 없는 JWT 를 그대로 받아들임
+    - pattern: $JOSE.UnsecuredJWT.decode(...)
+    - pattern: UnsecuredJWT.decode(...)
+    # 검증 결과(true/false)를 쓰지 않고 버린다: 문장으로만 호출한 crypto.verify·timingSafeEqual
+    # (맨이름 verify(...) 는 사용자 함수(미들웨어 등)일 수 있어 crypto. 를 붙인 것만 본다. timingSafeEqual 은 이름만으로 충분하다)
+    - pattern-regex: (?m)^[ \t]*(crypto\.verify|(crypto\.)?timingSafeEqual)\([^\n]*\);?[ \t]*$
+    # crypto.createVerify() 로 만든 검증 객체의 verify() 결과를 버린다
+    - patterns:
+        - pattern-inside: |
+            $V = $C.createVerify(...);
+            ...
+        - pattern-regex: (?m)^[ \t]*\w+\.verify\([^\n]*\);?[ \t]*$

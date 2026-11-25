@@ -1,0 +1,19 @@
+rules:
+- id: mois-4-02-empty-catch-py
+  languages: [python]
+  severity: WARNING
+  message: "[행안부 에러처리] 오류상황 대응 부재: 예외를 잡고 아무 처리도 하지 않음(pass·continue·...) — 로그를 남기고 복구하거나, 처리할 수 없으면 다시 발생시킬 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "에러처리"
+    mois-item-no: "4-2"
+    mois-item: "오류상황 대응 부재"
+    cwe: "CWE-390"
+    gate: warn
+  # Semgrep 의 Python try 패턴은 except 형태(as 유무·else·finally)마다 따로 써야 해서 줄 단위 정규식으로 잡는다.
+  # except 절의 본문이 pass / continue / ... 한 줄뿐인 경우 (주석·빈 줄은 무시)
+  pattern-either:
+    - pattern-regex: '(?m)^([ \t]*)except\b[^\n:]*:[ \t]*(?:#[^\n]*)?\n(?:[ \t]*(?:#[^\n]*)?\n)*\1[ \t]+(?:pass|continue|\.\.\.)[ \t]*(?:#[^\n]*)?$(?!\n(?:[ \t]*(?:#[^\n]*)?\n)*\1[ \t]+[^\s#])'
+    # 한 줄로 쓴 경우: except ValueError: pass
+    - pattern-regex: '(?m)^[ \t]*except\b[^\n:]*:[ \t]*(?:pass|continue|\.\.\.)[ \t]*(?:#[^\n]*)?$'

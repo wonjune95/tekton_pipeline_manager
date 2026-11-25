@@ -1,0 +1,41 @@
+rules:
+- id: mois-1-11-csrf-py
+  languages: [python]
+  severity: WARNING
+  message: "[행안부 입력데이터 검증 및 표현] 크로스사이트 요청 위조: CSRF 토큰 검사를 끔(csrf_exempt·CsrfViewMiddleware 제거·WTF_CSRF_ENABLED=False) — 세션·쿠키로 인증하는 화면이면 CSRF 보호를 켜고, 토큰 인증 API·서명 검증 웹훅만 예외로 둘 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "입력데이터 검증 및 표현"
+    mois-item-no: "1-11"
+    mois-item: "크로스사이트 요청 위조"
+    cwe: "CWE-352"
+    gate: warn
+  # 프레임워크의 CSRF 보호를 끄는 설정만 본다. 직접 만든 토큰 비교나, CSRF 보호가 없는 FastAPI 의 쿠키 인증은 판정하지 못한다.
+  pattern-either:
+    # Django: 뷰 단위 예외
+    - pattern: |
+        @django.views.decorators.csrf.csrf_exempt
+        def $F(...):
+          ...
+    - pattern: django.views.decorators.csrf.csrf_exempt($VIEW)
+    - pattern: django.utils.decorators.method_decorator(django.views.decorators.csrf.csrf_exempt, ...)
+    # Django: 설정에서 CSRF 미들웨어를 뺌
+    - patterns:
+        - pattern: MIDDLEWARE = [...]
+        - pattern-not: MIDDLEWARE = [..., "django.middleware.csrf.CsrfViewMiddleware", ...]
+    # Flask-WTF: 전역 비활성화·뷰 단위 예외
+    - pattern: $CFG["WTF_CSRF_ENABLED"] = False
+    - pattern: $CFG["WTF_CSRF_CHECK_DEFAULT"] = False
+    - pattern: WTF_CSRF_ENABLED = False
+    - pattern: WTF_CSRF_CHECK_DEFAULT = False
+    - pattern: $CFG.update(..., WTF_CSRF_ENABLED=False, ...)
+    - pattern: $CFG.update(..., WTF_CSRF_CHECK_DEFAULT=False, ...)
+    - patterns:
+        - pattern: |
+            @$CSRF.exempt
+            def $F(...):
+              ...
+        - metavariable-regex:
+            metavariable: $CSRF
+            regex: (?i).*csrf

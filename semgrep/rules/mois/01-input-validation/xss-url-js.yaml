@@ -1,0 +1,157 @@
+rules:
+- id: mois-1-04-xss-url-js
+  mode: taint
+  languages: [javascript, typescript]
+  severity: ERROR
+  message: "[행안부 입력데이터 검증 및 표현] 크로스사이트 스크립트: 외부 입력이 링크·스크립트 주소(href·src·action 속성, setAttribute, bypassSecurityTrustUrl)에 그대로 들어가 javascript: URL 로 스크립트를 실행할 수 있음 — 고정된 경로·스킴(\"/…\", \"https://…\")으로 시작하게 만들거나 http·https 만 허용하는지 검사한 뒤 넣을 것 (HTML 이스케이프·DOMPurify 로는 막을 수 없다)"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "입력데이터 검증 및 표현"
+    mois-item-no: "1-4"
+    mois-item: "크로스사이트 스크립트"
+    cwe: "CWE-79"
+    gate: block
+  # 참고: semgrep-rules javascript/browser/security/dom-based-xss.yaml
+  # HTML 이스케이프 · DOMPurify 는 javascript: 를 지우지 않으므로 이 규칙에서는 정화로 보지 않는다 (그래서 mois-1-04-xss-js 와 나눈다).
+  # React 는 버전에 따라 javascript: URL 을 경고만 하거나 막는다 — 버전을 알 수 없어 탐지한다.
+  # location.href · location.assign 등 페이지 이동은 1-7(신뢰되지 않는 URL 주소로 자동접속 연결) 규칙이 본다.
+  pattern-sources:
+    # (A) 서버 요청 값 (정규식은 가지마다 따로 건다 — 한 묶음에서 일부 가지에만 있는 메타변수에 걸면 나머지 가지가 무효가 된다)
+    - patterns:
+        - pattern: $REQ.$ATTR
+        - metavariable-regex:
+            metavariable: $REQ
+            regex: ^(req|request)$
+        - metavariable-regex:
+            metavariable: $ATTR
+            regex: ^(query|body|params|cookies|signedCookies|headers|originalUrl|url|path|hostname|files|file)$
+    - patterns:
+        - pattern: $REQ.$GET(...)
+        - metavariable-regex:
+            metavariable: $REQ
+            regex: ^(req|request)$
+        - metavariable-regex:
+            metavariable: $GET
+            regex: ^(get|header|param)$
+    - pattern: ctx.query
+    - pattern: ctx.params
+    - pattern: ctx.headers
+    - pattern: ctx.cookies.get(...)
+    - patterns:
+        - pattern: ctx.request.$ATTR
+        - metavariable-regex:
+            metavariable: $ATTR
+            regex: ^(query|body|headers|files|url|path)$
+    # (A-2) 요청 객체를 구조분해한 핸들러 매개변수: ({ params, query, body }: Request, res) => …  (두 번째 매개변수가 res·response·reply 일 때만)
+    - patterns:
+        - pattern-either:
+            - pattern-inside: |
+                ({..., $K, ...}, $RES, ...) => { ... }
+            - pattern-inside: |
+                ({..., $K, ...}: $T, $RES, ...) => { ... }
+            - pattern-inside: |
+                function ({..., $K, ...}, $RES, ...) { ... }
+            - pattern-inside: |
+                function $FN({..., $K, ...}, $RES, ...) { ... }
+        - metavariable-regex:
+            metavariable: $K
+            regex: ^(query|body|params|cookies|headers|files|file)$
+        - metavariable-regex:
+            metavariable: $RES
+            regex: ^(res|response|reply)$
+        - pattern: $K
+    # (B) NestJS 컨트롤러 매개변수 (숫자 변환 파이프 ParseIntPipe·ParseFloatPipe·ParseBoolPipe·ParseUUIDPipe 를 준 것은 제외)
+    - patterns:
+        - pattern-either:
+            - pattern-inside: |
+                $M(..., @$D(...) $P, ...) { ... }
+            - pattern-inside: |
+                $M(..., @$D(...) $P: $T, ...) { ... }
+            - pattern-inside: |
+                async $M(..., @$D(...) $P, ...) { ... }
+            - pattern-inside: |
+                async $M(..., @$D(...) $P: $T, ...) { ... }
+        - metavariable-regex:
+            metavariable: $D
+            regex: ^(Query|Body|Param|Headers|Req|Request)$
+        - pattern-not-inside:
+            patterns:
+              - pattern-either:
+                  - pattern-inside: |
+                      $M(..., @$D(..., $PIPE, ...) $P: $T, ...) { ... }
+                  - pattern-inside: |
+                      async $M(..., @$D(..., $PIPE, ...) $P: $T, ...) { ... }
+                  - pattern-inside: |
+                      $M(..., @$D(..., new $PIPE(...), ...) $P: $T, ...) { ... }
+                  - pattern-inside: |
+                      async $M(..., @$D(..., new $PIPE(...), ...) $P: $T, ...) { ... }
+              - metavariable-regex:
+                  metavariable: $PIPE
+                  regex: ^Parse(Int|Float|Bool|UUID|Enum)Pipe$
+        - focus-metavariable: $P
+    # (C) 브라우저 입력
+    - patterns:
+        - pattern-either:
+            - pattern: location.$LOC
+            - pattern: window.location.$LOC
+            - pattern: document.location.$LOC
+        - metavariable-regex:
+            metavariable: $LOC
+            regex: ^(href|search|hash|pathname)$
+    - pattern: document.URL
+    - pattern: document.documentURI
+    - pattern: document.referrer
+    - pattern: window.name
+    - patterns:
+        - pattern-inside: |
+            $W.addEventListener("message", ($E) => { ... })
+        - pattern: $E.data
+    # Angular ActivatedRoute: this.route.snapshot.queryParams.q · .params · .paramMap.get(...) · .fragment
+    - patterns:
+        - pattern: $R.snapshot.$P
+        - metavariable-regex:
+            metavariable: $P
+            regex: ^(queryParams|params|queryParamMap|paramMap|fragment)$
+    - pattern: useParams()
+    - pattern: useSearchParams()
+    - pattern: useLocation()
+    - pattern: useRouter().query
+    - patterns:
+        - pattern-inside: |
+            $R = useRouter();
+            ...
+        - pattern: $R.query
+  pattern-sanitizers:
+    # 결과에 : 가 남지 않아 스킴을 만들 수 없는 변환
+    - pattern: encodeURIComponent($X)
+    - pattern: Number($X)
+    - pattern: parseInt($X, ...)
+  pattern-sinks:
+    # 값의 맨 앞이 고정된 경로 · 스킴인 식은 제외한다: "/…" + x, `https://…/${x}`, "#" + x, "?q=" + x
+    # (리터럴 맨 앞에서 : 보다 먼저 / ? # 가 나오거나, 맨 앞이 "스킴:" 이면 입력이 스킴을 정할 수 없다)
+    - patterns:
+        - pattern-either:
+            - pattern: <$EL href={$B} />
+            - pattern: <$EL src={$B} />
+            - pattern: <$EL action={$B} />
+            - pattern: <$EL formAction={$B} />
+            - pattern: <$EL xlinkHref={$B} />
+            - pattern: $O.href = $B
+            - pattern: $O.src = $B
+            - pattern: $O.action = $B
+            - pattern: $O.formAction = $B
+            - pattern: $O.setAttribute("href", $B)
+            - pattern: $O.setAttribute("src", $B)
+            - pattern: $O.setAttribute("action", $B)
+            - pattern: $O.setAttribute("formaction", $B)
+            - pattern: $O.setAttribute("xlink:href", $B)
+            - pattern: $S.bypassSecurityTrustUrl($B)
+            - pattern: $S.bypassSecurityTrustResourceUrl($B)
+        - pattern-not: location.href = $B
+        - pattern-not: window.location.href = $B
+        - pattern-not: document.location.href = $B
+        - metavariable-regex:
+            metavariable: $B
+            regex: (?s)^(?!["'`](?:[^:"'`$]*[/?#]|[A-Za-z][A-Za-z0-9+.-]*:))
+        - focus-metavariable: $B

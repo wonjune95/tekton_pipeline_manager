@@ -1,0 +1,98 @@
+rules:
+- id: mois-5-02-resource-leak-py
+  languages: [python]
+  severity: WARNING
+  message: "[행안부 코드오류] 부적절한 자원 해제: 파일·소켓·DB 연결을 지역 변수로 열고 with 문이나 finally 로 닫지 않음 — 예외가 나도 반드시 해제되도록 with 문(또는 finally 의 close())을 쓸 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "코드오류"
+    mois-item-no: "5-2"
+    mois-item: "부적절한 자원 해제"
+    cwe: "CWE-404"
+    gate: warn
+  patterns:
+    # 함수 안에서 지역 변수로 연 파일·압축 파일·소켓·DB 연결
+    - pattern-either:
+        - pattern: $R = open(...)
+        - pattern: $R = io.open(...)
+        - pattern: $R = codecs.open(...)
+        - pattern: $R = gzip.open(...)
+        - pattern: $R = tarfile.open(...)
+        - pattern: $R = zipfile.ZipFile(...)
+        - pattern: $R = socket.socket(...)
+        - pattern: $R = socket.create_connection(...)
+        - pattern: $R = urllib.request.urlopen(...)
+        - pattern: $R = sqlite3.connect(...)
+        - pattern: $R = psycopg2.connect(...)
+        - pattern: $R = pymysql.connect(...)
+        - pattern: $R = MySQLdb.connect(...)
+        - pattern: $R = cx_Oracle.connect(...)
+        - pattern: $R = oracledb.connect(...)
+    - pattern-inside: |
+        def $FN(...):
+            ...
+    # self.f = open(...) 같은 필드 대입은 해제가 객체 수명에 달려 있어 제외
+    - metavariable-regex:
+        metavariable: $R
+        regex: ^[A-Za-z_][A-Za-z0-9_]*$
+    # 뒤에서 closing() 등으로 감싸 사용
+    - pattern-not-inside: |
+        $R = $INIT
+        ...
+        with $CLOSING($R):
+            ...
+    # 같은 함수 어디서든 `with 자원:` 으로 감싸면 제외 (바로 뒤에서 감싸는 경우, 반복문·try 안에서 감싸는 경우,
+    # try 안에서 열고 try 밖에서 감싸는 경우가 모두 여기에 맞는다)
+    - pattern-not-inside: |
+        def $FN(...):
+            ...
+            with $R:
+                ...
+            ...
+    # finally 에서 닫음 (try 안에서 열거나, try 앞에서 열고 뒤의 try/finally 에서 닫음)
+    - pattern-not-inside: |
+        try:
+            ...
+        finally:
+            ...
+            $R.close()
+            ...
+    - pattern-not-inside: |
+        $R = $INIT
+        ...
+        try:
+            ...
+        finally:
+            ...
+            $R.close()
+            ...
+    # 자원을 돌려주거나(응답 객체에 넘겨 반환 포함) 필드·종료 처리기에 넘기면 해제는 받는 쪽 몫
+    - pattern-not-inside: |
+        $R = $INIT
+        ...
+        return $R
+    - pattern-not-inside: |
+        $R = $INIT
+        ...
+        return $WRAP(..., $R, ...)
+    - pattern-not-inside: |
+        $R = $INIT
+        ...
+        yield $R
+    - pattern-not-inside: |
+        $R = $INIT
+        ...
+        $OBJ.$FIELD = $R
+    - pattern-not-inside: |
+        $R = $INIT
+        ...
+        $STACK.enter_context($R)
+    - pattern-not-inside: |
+        $R = $INIT
+        ...
+        $STACK.callback($R.close)
+    - pattern-not-inside: |
+        $R = $INIT
+        ...
+        atexit.register($R.close)

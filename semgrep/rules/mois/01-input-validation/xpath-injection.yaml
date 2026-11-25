@@ -1,0 +1,172 @@
+rules:
+- id: mois-1-09-xpath-injection
+  mode: taint
+  languages: [java]
+  severity: ERROR
+  message: "[행안부 입력데이터 검증 및 표현] XML 삽입: 외부 입력이 검증 없이 XPath·XQuery 질의문에 사용됨"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "입력데이터 검증 및 표현"
+    mois-item-no: "1-9"
+    mois-item: "XML 삽입"
+    cwe: "CWE-643"
+    gate: block
+  pattern-sources:
+    - patterns:
+        - pattern-either:
+            - pattern: (javax.servlet.http.HttpServletRequest $REQ).$GET(...)
+            - pattern: (jakarta.servlet.http.HttpServletRequest $REQ).$GET(...)
+        - metavariable-regex:
+            metavariable: $GET
+            regex: ^(getParameter|getParameterValues|getParameterMap|getParameterNames|getHeader|getHeaders|getHeaderNames|getQueryString|getRequestURI|getRequestURL|getPathInfo|getCookies|getInputStream|getReader|getPart|getParts)$
+    - pattern: (javax.servlet.http.Cookie $CK).getValue()
+    - pattern: (jakarta.servlet.http.Cookie $CK).getValue()
+    # 요청을 감싼 표준 객체: Spring 멀티파트·WebRequest, cos MultipartRequest, 업로드 파일의 원본 이름
+    - patterns:
+        - pattern-either:
+            - pattern: (org.springframework.web.multipart.MultipartHttpServletRequest $REQ).$GET(...)
+            - pattern: (org.springframework.web.multipart.MultipartRequest $REQ).$GET(...)
+            - pattern: (org.springframework.web.context.request.WebRequest $REQ).$GET(...)
+            - pattern: (org.springframework.web.context.request.NativeWebRequest $REQ).$GET(...)
+            - pattern: (com.oreilly.servlet.MultipartRequest $REQ).$GET(...)
+            - pattern: (javax.servlet.ServletRequest $REQ).$GET(...)
+            - pattern: (jakarta.servlet.ServletRequest $REQ).$GET(...)
+        - metavariable-regex:
+            metavariable: $GET
+            regex: ^(getParameter|getParameterValues|getParameterMap|getParameterNames|getHeader|getHeaderValues|getHeaderNames|getFilesystemName|getOriginalFileName|getFileNames|getInputStream|getReader)$
+    - pattern: (org.springframework.web.multipart.MultipartFile $MF).getOriginalFilename()
+    - patterns:
+        - pattern-either:
+            - pattern: $RET $M(..., @$A(...) $T $P, ...) { ... }
+            - pattern: $RET $M(..., @$A $T $P, ...) { ... }
+        - metavariable-regex:
+            metavariable: $A
+            regex: ^(RequestParam|PathVariable|RequestHeader|CookieValue|RequestBody|ModelAttribute|MatrixVariable)$
+        - metavariable-regex:
+            metavariable: $T
+            regex: ^(?!(int|long|short|byte|double|float|boolean|Integer|Long|Short|Byte|Double|Float|Boolean|BigDecimal|BigInteger|UUID|LocalDate|LocalDateTime)$).*
+        - focus-metavariable: $P
+    # Spring MVC 는 애너테이션이 없는 핸들러 매개변수도 요청 값으로 채운다 (단순형은 요청 파라미터, 객체는 폼 바인딩).
+    # 숫자·날짜형과 프레임워크가 넣어 주는 객체(요청·응답·세션·모델 등), 요청과 무관한 애너테이션은 제외
+    - patterns:
+        - pattern-either:
+            - pattern: |
+                @$MAP(...)
+                $RET $M(..., $T $P, ...) { ... }
+            - pattern: |
+                @$MAP
+                $RET $M(..., $T $P, ...) { ... }
+        - metavariable-regex:
+            metavariable: $MAP
+            regex: ^(RequestMapping|GetMapping|PostMapping|PutMapping|PatchMapping|DeleteMapping)$
+        - metavariable-regex:
+            metavariable: $T
+            regex: ^(?!(int|long|short|byte|double|float|boolean|char|Integer|Long|Short|Byte|Double|Float|Boolean|Character|BigDecimal|BigInteger|UUID|LocalDate|LocalDateTime|Date|HttpServletRequest|HttpServletResponse|ServletRequest|ServletResponse|HttpSession|Model|ModelMap|ModelAndView|Map|BindingResult|Errors|Locale|TimeZone|Principal|Authentication|RedirectAttributes|SessionStatus|UriComponentsBuilder|Pageable|Sort|WebRequest|NativeWebRequest|InputStream|OutputStream|Reader|Writer|HttpMethod)\b).*
+        # 애너테이션이 붙은 매개변수는 여기서 보지 않는다. 요청 바인딩 애너테이션은 위 항목, 검증 애너테이션은 아래 항목이 본다.
+        # 그 밖의 애너테이션(@AuthenticationPrincipal, 직접 만든 @CurrentUser 등)은 요청 값이 아니라 프레임워크·리졸버가 넣는 값이다
+        - pattern-not: $RET $M(..., @$ANN(...) $T $P, ...) { ... }
+        - focus-metavariable: $P
+    # 검증 애너테이션만 붙은 핸들러 매개변수(@Valid MemberForm form)도 요청 값으로 채워진다
+    - patterns:
+        - pattern: |
+            @$MAP(...)
+            $RET $M(..., @$VA(...) $T $P, ...) { ... }
+        - metavariable-regex:
+            metavariable: $MAP
+            regex: ^(RequestMapping|GetMapping|PostMapping|PutMapping|PatchMapping|DeleteMapping)$
+        - metavariable-regex:
+            metavariable: $VA
+            regex: ^(Valid|Validated|NotNull|NotBlank|NotEmpty|Size|Pattern|Length|Email|Nullable|NonNull)$
+        - metavariable-regex:
+            metavariable: $T
+            regex: ^(?!(int|long|short|byte|double|float|boolean|char|Integer|Long|Short|Byte|Double|Float|Boolean|Character|BigDecimal|BigInteger|UUID|LocalDate|LocalDateTime|Date|HttpServletRequest|HttpServletResponse|ServletRequest|ServletResponse|HttpSession|Model|ModelMap|ModelAndView|Map|BindingResult|Errors|Locale|TimeZone|Principal|Authentication|RedirectAttributes|SessionStatus|UriComponentsBuilder|Pageable|Sort|WebRequest|NativeWebRequest|InputStream|OutputStream|Reader|Writer|HttpMethod)\b).*
+        - focus-metavariable: $P
+  pattern-sanitizers:
+    # 문자 제거는 무엇을 지우는지 리터럴로 보일 때만 인정한다 (docs/rule-conventions.md 2절). 반환값을 써야 한다.
+    # 임의의 replaceAll(정규식을 알 수 없거나 따옴표를 지우지 않는 것)은 인정하지 않는다.
+    # (1) 허용 문자만 남김: replaceAll("[^A-Za-z0-9_-]", "") — 영문자·숫자·_·- 한 낱말만 남으므로 따옴표 안팎 어느 자리에서도 인정.
+    #     범위는 숫자끼리·소문자끼리·대문자끼리만 본다. [^0-z]·[^A-z] 는 @ = [ ] 가 남아 따옴표 없는 자리에서 조건을 바꿀 수 있다.
+    #     - 는 맨 앞이나 맨 뒤에 글자로 적은 것만 본다
+    - patterns:
+        - pattern: $X.replaceAll("$RE", "")
+        - metavariable-regex:
+            metavariable: $RE
+            regex: ^\[\^-?(\\\\[wd]|[0-9]-[0-9]|[a-z]-[a-z]|[A-Z]-[A-Z]|[A-Za-z0-9_])+-?\]\+?$
+    # (2) 작은따옴표를 지움: replaceAll("[()\\-'\\[\\]:,*/]", "")  (진단가이드 안전한 코드 예)
+    #     값이 '…' 문자열을 벗어나지 못한다는 것만 증명되므로, 작은따옴표를 여는 리터럴(…=' · …(' · …,') 바로 뒤에 이어 붙인 자리에서만 인정한다.
+    #     큰따옴표 문자열 안("…=\"" + v)이나 따옴표 없는 자리("[@id=" + v)에서는 인정하지 않는다.
+    #     문자 집합은 글자와 이스케이프한 문장부호만 본다 (&& 교집합, \\c' · \\Q…\\E 같은 이스케이프가 섞이면 무엇을 지우는지 알 수 없다)
+    - patterns:
+        - pattern-either:
+            # 이어 붙이는 자리에서 바로 지움
+            - patterns:
+                - pattern: $X.replaceAll("$RE", "")
+                - pattern-either:
+                    - pattern-inside: |
+                        "$L" + $X.replaceAll("$RE", "")
+                    - pattern-inside: |
+                        $PRE + "$L" + $X.replaceAll("$RE", "")
+            # 지운 값을 변수에 담아 두었다가 이어 붙임 (그 사이에 다시 대입하거나 덧붙이지 않아야 한다)
+            - patterns:
+                - pattern: $V
+                - metavariable-regex:
+                    metavariable: $V
+                    regex: ^\w+$
+                - pattern-inside: |
+                    $V = $X.replaceAll("$RE", "");
+                    ...
+                # 지우는 문장 자신의 오른쪽에 든 $V 는 아직 지우기 전 값이다: v = ("…='" + v + "'").replaceAll(…)
+                - pattern-not-inside: $V = $X.replaceAll("$RE", "")
+                - pattern-not-inside: |
+                    $V = $X.replaceAll("$RE", "");
+                    ...
+                    $V = $W;
+                    ...
+                - pattern-not-inside: |
+                    $V = $X.replaceAll("$RE", "");
+                    ...
+                    $V += $W;
+                    ...
+                - pattern-either:
+                    - pattern-inside: |
+                        "$L" + $V
+                    - pattern-inside: |
+                        $PRE + "$L" + $V
+        - metavariable-regex:
+            metavariable: $RE
+            regex: ^\[(?!\^)(?=.*')(\\\\[^A-Za-z0-9\\]|\\["']|&(?!&)|[^\]\\&])*\]\+?$
+        - metavariable-regex:
+            metavariable: $L
+            regex: .*[=(,]\s*'$
+  pattern-propagators:
+    - pattern: $SB.append($X)
+      from: $X
+      to: $SB
+    # 컬렉션에 넣은 값은 컬렉션 전체를 오염시킨다 (요소 단위로는 구분하지 못한다)
+    - pattern: $COL.add($X)
+      from: $X
+      to: $COL
+    - pattern: $COL.add($IDX, $X)
+      from: $X
+      to: $COL
+    - pattern: $COL.put($KEY, $X)
+      from: $X
+      to: $COL
+    - pattern: $COL.addAll($X)
+      from: $X
+      to: $COL
+  pattern-sinks:
+    - patterns:
+        - pattern-either:
+            - pattern: (javax.xml.xpath.XPath $X).compile($Q)
+            - pattern: (javax.xml.xpath.XPath $X).evaluate($Q, ...)
+            - pattern: (javax.xml.xpath.XPath $X).evaluateExpression($Q, ...)
+            - pattern: javax.xml.xpath.XPathFactory.newInstance().newXPath().compile($Q)
+            - pattern: javax.xml.xpath.XPathFactory.newInstance().newXPath().evaluate($Q, ...)
+            - pattern: (javax.xml.xpath.XPathFactory $F).newXPath().compile($Q)
+            - pattern: (javax.xml.xpath.XPathFactory $F).newXPath().evaluate($Q, ...)
+            - pattern: (javax.xml.xquery.XQConnection $C).prepareExpression($Q, ...)
+            - pattern: (javax.xml.xquery.XQExpression $E).executeQuery($Q)
+            - pattern: (javax.xml.xquery.XQExpression $E).executeCommand($Q)
+        - focus-metavariable: $Q

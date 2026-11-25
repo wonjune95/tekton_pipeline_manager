@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="egovframework.member.service.impl.MemberMapper">
+  <select id="selectMemberByName" parameterType="string" resultType="memberVO">
+    <!-- ok: mois-1-01-sql-injection-mybatis — #{} 는 바인딩 변수 -->
+    SELECT member_id, member_nm FROM tb_member WHERE member_nm = #{memberNm}
+  </select>
+  <select id="selectMemberList" parameterType="searchVO" resultType="memberVO">
+    SELECT member_id, member_nm FROM tb_member
+    <where>
+      <if test="searchKeyword != null">AND member_nm LIKE CONCAT('%', #{searchKeyword}, '%')</if>
+      <foreach collection="deptIds" item="deptId" open="AND dept_id IN (" separator="," close=")">#{deptId}</foreach>
+      <!-- 예전 조건 (주석 안의 ${} 는 실행되지 않는다): AND member_nm LIKE '%${searchKeyword}%' -->
+    </where>
+    <!-- 정렬 기준은 바인딩할 수 없으므로 허용된 값만 분기로 고른다 -->
+    <choose>
+      <when test="sortColumn == 'name'">ORDER BY member_nm</when>
+      <otherwise>ORDER BY member_id</otherwise>
+    </choose>
+  </select>
+  <!--
+    여러 줄 주석으로 막아 둔 질의:
+    UPDATE ${tableName} SET member_nm = '${memberNm}'
+  -->
+  <update id="updateMemberName" parameterType="map">
+    UPDATE tb_member SET member_nm = #{memberNm,jdbcType=VARCHAR} WHERE member_id = #{memberId}
+  </update>
+  <select id="selectFee" resultType="string">
+    <!-- ok: mois-1-01-sql-injection-mybatis — 중괄호 없는 $ 는 치환이 아니다 -->
+    SELECT CONCAT('$', fee) FROM tb_member WHERE member_id = #{memberId}
+  </select>
+</mapper>

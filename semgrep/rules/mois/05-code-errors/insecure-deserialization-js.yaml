@@ -1,0 +1,175 @@
+rules:
+- id: mois-5-05-insecure-deserialization-js
+  mode: taint
+  languages: [javascript, typescript]
+  severity: ERROR
+  message: "[행안부 코드오류] 신뢰할 수 없는 데이터의 역직렬화: 외부 입력(요청 값·쿠키·브라우저 입력)을 함수까지 되살리는 역직렬화(node-serialize unserialize·serialize-to-js deserialize·funcster·cryo, FULL 스키마의 js-yaml load)에 넘김 — 임의 코드가 실행될 수 있으니 JSON.parse 와 스키마 검증을 쓰고, YAML 은 js-yaml 4 의 load(기본 스키마)·safeLoad 로 읽을 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "코드오류"
+    mois-item-no: "5-5"
+    mois-item: "신뢰할 수 없는 데이터의 역직렬화"
+    cwe: "CWE-502"
+    gate: block
+  # 참고: semgrep-rules javascript/express/security/audit/express-third-party-object-deserialization.yaml
+  # source 는 docs/js-source-block.yaml 을 그대로 복사한 것이다 (고치면 그 파일과 모든 *-js taint 규칙을 같이 고칠 것)
+  pattern-sources:
+    # (A) 서버 요청 값 (정규식은 가지마다 따로 건다 — 한 묶음에서 일부 가지에만 있는 메타변수에 걸면 나머지 가지가 무효가 된다)
+    - patterns:
+        - pattern: $REQ.$ATTR
+        - metavariable-regex:
+            metavariable: $REQ
+            regex: ^(req|request)$
+        - metavariable-regex:
+            metavariable: $ATTR
+            regex: ^(query|body|params|cookies|signedCookies|headers|originalUrl|url|path|hostname|files|file)$
+    - patterns:
+        - pattern: $REQ.$GET(...)
+        - metavariable-regex:
+            metavariable: $REQ
+            regex: ^(req|request)$
+        - metavariable-regex:
+            metavariable: $GET
+            regex: ^(get|header|param)$
+    - pattern: ctx.query
+    - pattern: ctx.params
+    - pattern: ctx.headers
+    - pattern: ctx.cookies.get(...)
+    - patterns:
+        - pattern: ctx.request.$ATTR
+        - metavariable-regex:
+            metavariable: $ATTR
+            regex: ^(query|body|headers|files|url|path)$
+    # (A-2) 요청 객체를 구조분해한 핸들러 매개변수: ({ params, query, body }: Request, res) => …  (두 번째 매개변수가 res·response·reply 일 때만)
+    - patterns:
+        - pattern-either:
+            - pattern-inside: |
+                ({..., $K, ...}, $RES, ...) => { ... }
+            - pattern-inside: |
+                ({..., $K, ...}: $T, $RES, ...) => { ... }
+            - pattern-inside: |
+                function ({..., $K, ...}, $RES, ...) { ... }
+            - pattern-inside: |
+                function $FN({..., $K, ...}, $RES, ...) { ... }
+        - metavariable-regex:
+            metavariable: $K
+            regex: ^(query|body|params|cookies|headers|files|file)$
+        - metavariable-regex:
+            metavariable: $RES
+            regex: ^(res|response|reply)$
+        - pattern: $K
+    # (B) NestJS 컨트롤러 매개변수 (숫자 변환 파이프 ParseIntPipe·ParseFloatPipe·ParseBoolPipe·ParseUUIDPipe 를 준 것은 제외)
+    - patterns:
+        - pattern-either:
+            - pattern-inside: |
+                $M(..., @$D(...) $P, ...) { ... }
+            - pattern-inside: |
+                $M(..., @$D(...) $P: $T, ...) { ... }
+            - pattern-inside: |
+                async $M(..., @$D(...) $P, ...) { ... }
+            - pattern-inside: |
+                async $M(..., @$D(...) $P: $T, ...) { ... }
+        - metavariable-regex:
+            metavariable: $D
+            regex: ^(Query|Body|Param|Headers|Req|Request)$
+        - pattern-not-inside:
+            patterns:
+              - pattern-either:
+                  - pattern-inside: |
+                      $M(..., @$D(..., $PIPE, ...) $P: $T, ...) { ... }
+                  - pattern-inside: |
+                      async $M(..., @$D(..., $PIPE, ...) $P: $T, ...) { ... }
+                  - pattern-inside: |
+                      $M(..., @$D(..., new $PIPE(...), ...) $P: $T, ...) { ... }
+                  - pattern-inside: |
+                      async $M(..., @$D(..., new $PIPE(...), ...) $P: $T, ...) { ... }
+              - metavariable-regex:
+                  metavariable: $PIPE
+                  regex: ^Parse(Int|Float|Bool|UUID|Enum)Pipe$
+        - focus-metavariable: $P
+    # (C) 브라우저 입력
+    - patterns:
+        - pattern-either:
+            - pattern: location.$LOC
+            - pattern: window.location.$LOC
+            - pattern: document.location.$LOC
+        - metavariable-regex:
+            metavariable: $LOC
+            regex: ^(href|search|hash|pathname)$
+    - pattern: document.URL
+    - pattern: document.documentURI
+    - pattern: document.referrer
+    - pattern: window.name
+    - patterns:
+        - pattern-inside: |
+            $W.addEventListener("message", ($E) => { ... })
+        - pattern: $E.data
+    # Angular ActivatedRoute: this.route.snapshot.queryParams.q · .params · .paramMap.get(...) · .fragment
+    - patterns:
+        - pattern: $R.snapshot.$P
+        - metavariable-regex:
+            metavariable: $P
+            regex: ^(queryParams|params|queryParamMap|paramMap|fragment)$
+    - pattern: useParams()
+    - pattern: useSearchParams()
+    - pattern: useLocation()
+    - pattern: useRouter().query
+    - patterns:
+        - pattern-inside: |
+            $R = useRouter();
+            ...
+        - pattern: $R.query
+  pattern-sinks:
+    - patterns:
+        - pattern-either: &deser
+            # 함수·클래스까지 되살리는 직렬화 라이브러리 (require·import 로 확인)
+            - patterns:
+                - pattern-either:
+                    - pattern-inside: |
+                        $LIB = require('$MOD');
+                        ...
+                    - pattern-inside: |
+                        import $LIB from '$MOD';
+                        ...
+                    - pattern-inside: |
+                        import * as $LIB from '$MOD';
+                        ...
+                - pattern: $LIB.$FN($X, ...)
+                - metavariable-regex:
+                    metavariable: $MOD
+                    regex: ^(node-serialize|serialize-to-js|funcster|cryo)$
+                - metavariable-regex:
+                    metavariable: $FN
+                    regex: ^(unserialize|deserialize|deepDeserialize|parse)$
+            # js-yaml 3 의 FULL 스키마: !!js/function 으로 함수를 만든다 (이 상수는 js-yaml 3 에만 있다)
+            - patterns:
+                - pattern-either:
+                    - pattern: '$YAML.$FN($X, {..., schema: $SCHEMA, ...})'
+                    - pattern: '$YAML.$FN($X, $CB, {..., schema: $SCHEMA, ...})'
+                - metavariable-regex:
+                    metavariable: $FN
+                    regex: ^(load|loadAll)$
+                - metavariable-regex:
+                    metavariable: $SCHEMA
+                    regex: ^(\w+\.)?(DEFAULT_FULL_SCHEMA|FULL_SCHEMA)$
+        - focus-metavariable: $X
+
+- id: mois-5-05-unsafe-deserializer-js
+  languages: [javascript, typescript]
+  severity: WARNING
+  message: "[행안부 코드오류] 신뢰할 수 없는 데이터의 역직렬화: 함수까지 되살리는 역직렬화(node-serialize unserialize·serialize-to-js deserialize·funcster·cryo, FULL 스키마의 js-yaml load)를 사용함 — 데이터 출처를 확인하고 JSON.parse·js-yaml 4 의 load(기본 스키마)·safeLoad 로 바꿀 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "코드오류"
+    mois-item-no: "5-5"
+    mois-item: "신뢰할 수 없는 데이터의 역직렬화"
+    cwe: "CWE-502"
+    gate: warn
+  # 요청 값이 직접 흘러가는 경우는 위 block 규칙도 같은 줄을 잡는다. 문자열 리터럴만 넘기는 호출은 제외
+  patterns:
+    - pattern-either: *deser
+    - focus-metavariable: $X
+    - pattern-not: |
+        "..."

@@ -1,0 +1,52 @@
+rules:
+- id: mois-2-07-insufficient-key-length
+  languages: [java]
+  severity: ERROR
+  message: "[행안부 보안기능] 충분하지 않은 키 길이 사용: RSA·DSA·DH 2048비트, ECC 256비트, 대칭키 128비트 미만"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "보안기능"
+    mois-item-no: "2-7"
+    mois-item: "충분하지 않은 키 길이 사용"
+    cwe: "CWE-326"
+    gate: block
+  pattern-either:
+    # 공개키 (진단가이드: RSA·DSA 2,048비트 이상)
+    - patterns:
+        - pattern-inside: |
+            $G = java.security.KeyPairGenerator.getInstance("$ALG", ...);
+            ...
+        - pattern: $G.initialize($N, ...)
+        - metavariable-regex:
+            metavariable: $ALG
+            regex: (?i)^(RSA|RSASSA-PSS|DSA|DH|DiffieHellman)$
+        - metavariable-comparison:
+            metavariable: $N
+            comparison: $N < 2048
+    - patterns:
+        - pattern: new java.security.spec.RSAKeyGenParameterSpec($N, ...)
+        - metavariable-comparison:
+            metavariable: $N
+            comparison: $N < 2048
+    # ECC (진단가이드: 256 이상)
+    - patterns:
+        - pattern-inside: |
+            $G = java.security.KeyPairGenerator.getInstance("$ALG", ...);
+            ...
+        - pattern: $G.initialize($N, ...)
+        - metavariable-regex:
+            metavariable: $ALG
+            regex: (?i)^(EC|ECDSA|ECDH)$
+        - metavariable-comparison:
+            metavariable: $N
+            comparison: $N < 256
+    # 대칭키 (128비트 이상)
+    - patterns:
+        - pattern-inside: |
+            $K = javax.crypto.KeyGenerator.getInstance("$ALG", ...);
+            ...
+        - pattern: $K.init($N, ...)
+        - metavariable-comparison:
+            metavariable: $N
+            comparison: $N < 128

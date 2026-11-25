@@ -1,0 +1,198 @@
+rules:
+- id: mois-1-07-open-redirect
+  mode: taint
+  languages: [java]
+  severity: ERROR
+  message: "[행안부 입력데이터 검증 및 표현] 신뢰되지 않는 URL 주소로 자동접속 연결: 외부 입력 URL 로 검증 없이 리다이렉트함 (허용 목록·상대 경로만 허용)"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "입력데이터 검증 및 표현"
+    mois-item-no: "1-7"
+    mois-item: "신뢰되지 않는 URL 주소로 자동접속 연결"
+    cwe: "CWE-601"
+    gate: block
+  pattern-sources:
+    - patterns:
+        - pattern-either:
+            - pattern: (javax.servlet.http.HttpServletRequest $REQ).$GET(...)
+            - pattern: (jakarta.servlet.http.HttpServletRequest $REQ).$GET(...)
+        - metavariable-regex:
+            metavariable: $GET
+            regex: ^(getParameter|getParameterValues|getParameterMap|getParameterNames|getHeader|getHeaders|getHeaderNames|getQueryString|getRequestURI|getRequestURL|getPathInfo|getCookies|getInputStream|getReader|getPart|getParts)$
+    - pattern: (javax.servlet.http.Cookie $CK).getValue()
+    - pattern: (jakarta.servlet.http.Cookie $CK).getValue()
+    # 요청을 감싼 표준 객체: Spring 멀티파트·WebRequest, cos MultipartRequest, 업로드 파일의 원본 이름
+    - patterns:
+        - pattern-either:
+            - pattern: (org.springframework.web.multipart.MultipartHttpServletRequest $REQ).$GET(...)
+            - pattern: (org.springframework.web.multipart.MultipartRequest $REQ).$GET(...)
+            - pattern: (org.springframework.web.context.request.WebRequest $REQ).$GET(...)
+            - pattern: (org.springframework.web.context.request.NativeWebRequest $REQ).$GET(...)
+            - pattern: (com.oreilly.servlet.MultipartRequest $REQ).$GET(...)
+            - pattern: (javax.servlet.ServletRequest $REQ).$GET(...)
+            - pattern: (jakarta.servlet.ServletRequest $REQ).$GET(...)
+        - metavariable-regex:
+            metavariable: $GET
+            regex: ^(getParameter|getParameterValues|getParameterMap|getParameterNames|getHeader|getHeaderValues|getHeaderNames|getFilesystemName|getOriginalFileName|getFileNames|getInputStream|getReader)$
+    - pattern: (org.springframework.web.multipart.MultipartFile $MF).getOriginalFilename()
+    - patterns:
+        - pattern-either:
+            - pattern: $RET $M(..., @$A(...) $T $P, ...) { ... }
+            - pattern: $RET $M(..., @$A $T $P, ...) { ... }
+        - metavariable-regex:
+            metavariable: $A
+            regex: ^(RequestParam|PathVariable|RequestHeader|CookieValue|RequestBody|ModelAttribute|MatrixVariable)$
+        - metavariable-regex:
+            metavariable: $T
+            regex: ^(?!(int|long|short|byte|double|float|boolean|Integer|Long|Short|Byte|Double|Float|Boolean|BigDecimal|BigInteger|UUID|LocalDate|LocalDateTime)$).*
+        - focus-metavariable: $P
+    # Spring MVC 는 애너테이션이 없는 핸들러 매개변수도 요청 값으로 채운다 (단순형은 요청 파라미터, 객체는 폼 바인딩).
+    # 숫자·날짜형과 프레임워크가 넣어 주는 객체(요청·응답·세션·모델 등), 요청과 무관한 애너테이션은 제외
+    - patterns:
+        - pattern-either:
+            - pattern: |
+                @$MAP(...)
+                $RET $M(..., $T $P, ...) { ... }
+            - pattern: |
+                @$MAP
+                $RET $M(..., $T $P, ...) { ... }
+        - metavariable-regex:
+            metavariable: $MAP
+            regex: ^(RequestMapping|GetMapping|PostMapping|PutMapping|PatchMapping|DeleteMapping)$
+        - metavariable-regex:
+            metavariable: $T
+            regex: ^(?!(int|long|short|byte|double|float|boolean|char|Integer|Long|Short|Byte|Double|Float|Boolean|Character|BigDecimal|BigInteger|UUID|LocalDate|LocalDateTime|Date|HttpServletRequest|HttpServletResponse|ServletRequest|ServletResponse|HttpSession|Model|ModelMap|ModelAndView|Map|BindingResult|Errors|Locale|TimeZone|Principal|Authentication|RedirectAttributes|SessionStatus|UriComponentsBuilder|Pageable|Sort|WebRequest|NativeWebRequest|InputStream|OutputStream|Reader|Writer|HttpMethod)\b).*
+        # 애너테이션이 붙은 매개변수는 여기서 보지 않는다. 요청 바인딩 애너테이션은 위 항목, 검증 애너테이션은 아래 항목이 본다.
+        # 그 밖의 애너테이션(@AuthenticationPrincipal, 직접 만든 @CurrentUser 등)은 요청 값이 아니라 프레임워크·리졸버가 넣는 값이다
+        - pattern-not: $RET $M(..., @$ANN(...) $T $P, ...) { ... }
+        - focus-metavariable: $P
+    # 검증 애너테이션만 붙은 핸들러 매개변수(@Valid MemberForm form)도 요청 값으로 채워진다
+    - patterns:
+        - pattern: |
+            @$MAP(...)
+            $RET $M(..., @$VA(...) $T $P, ...) { ... }
+        - metavariable-regex:
+            metavariable: $MAP
+            regex: ^(RequestMapping|GetMapping|PostMapping|PutMapping|PatchMapping|DeleteMapping)$
+        - metavariable-regex:
+            metavariable: $VA
+            regex: ^(Valid|Validated|NotNull|NotBlank|NotEmpty|Size|Pattern|Length|Email|Nullable|NonNull)$
+        - metavariable-regex:
+            metavariable: $T
+            regex: ^(?!(int|long|short|byte|double|float|boolean|char|Integer|Long|Short|Byte|Double|Float|Boolean|Character|BigDecimal|BigInteger|UUID|LocalDate|LocalDateTime|Date|HttpServletRequest|HttpServletResponse|ServletRequest|ServletResponse|HttpSession|Model|ModelMap|ModelAndView|Map|BindingResult|Errors|Locale|TimeZone|Principal|Authentication|RedirectAttributes|SessionStatus|UriComponentsBuilder|Pageable|Sort|WebRequest|NativeWebRequest|InputStream|OutputStream|Reader|Writer|HttpMethod)\b).*
+        - focus-metavariable: $P
+  pattern-sanitizers:
+    # 앞부분이 리터럴로 고정된 주소: 같은 사이트 경로("/경로…") 이거나 스킴·호스트가 모두 정해진 절대 주소.
+    # "/" 하나뿐이면 //host 가 되고, "https://" 나 "https://host" (뒤에 / 없음) 는 호스트를 바꿀 수 있으므로 인정하지 않는다.
+    # $A 는 + 로 이어 붙인 식의 왼쪽 전체이므로, 식이 그런 리터럴로 시작하고 그 리터럴 바로 뒤가 + 이거나 끝인지를 본다
+    # (리터럴에 메서드를 부른 "https://HOST/".replace("HOST", 입력) 은 호스트가 고정된 것이 아니다).
+    - patterns:
+        - pattern: $A + $B
+        - metavariable-regex:
+            metavariable: $A
+            regex: ^"(redirect:)?(/[^/\\"]|https?://[^/?#\\@"]+[/?#])([^"\\]|\\.)*"\s*(\+|$)
+    - patterns:
+        - pattern: String.format("$FMT", ...)
+        - metavariable-regex:
+            metavariable: $FMT
+            regex: ^(redirect:)?(/[^/\\%]|https?://[^/?#\\@%]+[/?#])
+    # 허용 목록 Map 에서 꺼낸 값: 입력은 키로만 쓰인다. 내용이 리터럴뿐임을 코드에서 확인할 수 있는 final 필드만 인정한다
+    # (docs/rule-conventions.md §2). 선언에 붙은 초기화 식($INIT)이 아래 둘 중 하나여야 한다.
+    #  (가) 불변 Map 을 리터럴로 만든다: Map.of("k", "v", …) · Map.ofEntries(Map.entry("k", "v"), …) · ImmutableMap.of(…)
+    #       — 괄호 안에 문자열 리터럴·쉼표·Map.entry( ) 말고 다른 것이 있으면(변수, 메서드 호출) 인정하지 않는다
+    #  (나) 빈 Map 을 만든다: new HashMap<>() 등 (생성자 인자 없음, EnumMap 은 키 클래스만) — 클래스 안에서 리터럴 값만 put 해야 한다
+    # 초기화 식 없이 선언하고 생성자·초기화 블록에서 대입하는 필드, 다른 Map 을 복사한 것(new HashMap<>(other)),
+    # 메서드가 돌려준 Map(loadFromDb(), config.getTargets())은 값이 어디서 왔는지 알 수 없으므로 인정하지 않는다.
+    - patterns:
+        - pattern-either:
+            - pattern: $MAP.get(...)
+            - pattern: this.$MAP.get(...)
+            - pattern: $MAP.getOrDefault($K, "...")
+            - pattern: this.$MAP.getOrDefault($K, "...")
+        - pattern-inside: |
+            class $C { ... final $MT $MAP = $INIT; ... }
+        - metavariable-regex:
+            metavariable: $MT
+            regex: ^(java\.util\.)?(Map|HashMap|LinkedHashMap|TreeMap|EnumMap|ConcurrentHashMap|ImmutableMap)\b
+        - metavariable-regex:
+            metavariable: $INIT
+            regex: (?s)^((Immutable)?Map\.of(Entries)?\((\s+|,|"([^"\\]|\\.)*"|Map\.entry\(|\))*\)|new\s+(HashMap|LinkedHashMap|TreeMap|EnumMap|ConcurrentHashMap)\s*(<[^()]*>)?\s*\(\s*(\w+\.class\s*)?\))$
+        # 클래스 안(메서드·생성자·static 블록·초기화 블록, 람다 본문 포함)에서 리터럴이 아닌 값을 넣으면 고정 목록이 아니다.
+        # 리터럴 값만 넣는 put("k", "값") 은 고정 목록을 채우는 것이므로 허용.
+        # 메서드 참조로 넘기거나(src.forEach(m::put)) Map 자체를 다른 호출의 인자로 넘기면(fill(m)) 그쪽에서 바뀔 수 있으므로 인정하지 않는다.
+        # ponytail: 안쪽 클래스·다른 클래스에서 넣는 것은 보지 못한다
+        - pattern-not-inside:
+            patterns:
+              - pattern: class $C { ... }
+              - pattern-either:
+                  - pattern-inside: |
+                      class $C { ... $R $M(...) { ... <... $MAP::$REF ...>; ... } ... }
+                  - pattern-inside: |
+                      class $C { ... $C(...) { ... <... $MAP::$REF ...>; ... } ... }
+                  - pattern-inside: |
+                      class $C { ... $R $M(...) { ... <... $FN(..., $MAP, ...) ...>; ... } ... }
+                  - pattern-inside: |
+                      class $C { ... $C(...) { ... <... $FN(..., $MAP, ...) ...>; ... } ... }
+        - pattern-not-inside:
+            patterns:
+              - pattern: class $C { ... }
+              - pattern-either:
+                  - pattern-inside: |
+                      class $C { ... $R $M(...) { ... <... $MAP.$PUT(..., $VAL) ...>; ... } ... }
+                  - pattern-inside: |
+                      class $C { ... $R $M(...) { ... <... this.$MAP.$PUT(..., $VAL) ...>; ... } ... }
+                  - pattern-inside: |
+                      class $C { ... $C(...) { ... <... $MAP.$PUT(..., $VAL) ...>; ... } ... }
+                  - pattern-inside: |
+                      class $C { ... $C(...) { ... <... this.$MAP.$PUT(..., $VAL) ...>; ... } ... }
+                  - pattern-inside: |
+                      class $C { ... static { ... <... $MAP.$PUT(..., $VAL) ...>; ... } ... }
+                  - pattern-inside: |
+                      class $C { ... { ... <... $MAP.$PUT(..., $VAL) ...>; ... } ... }
+                  - pattern-inside: |
+                      class $C { ... { ... <... this.$MAP.$PUT(..., $VAL) ...>; ... } ... }
+              - metavariable-regex:
+                  metavariable: $PUT
+                  regex: ^(put|putAll|putIfAbsent|compute|computeIfAbsent|computeIfPresent|merge|replace|replaceAll)$
+              - metavariable-regex:
+                  metavariable: $VAL
+                  regex: ^(?!"([^"\\]|\\.)*"$)
+    - pattern: Integer.parseInt(...)
+    - pattern: Long.parseLong(...)
+  pattern-propagators:
+    - pattern: $SB.append($X)
+      from: $X
+      to: $SB
+    # 컬렉션에 넣은 값은 컬렉션 전체를 오염시킨다 (요소 단위로는 구분하지 못한다)
+    - pattern: $COL.add($X)
+      from: $X
+      to: $COL
+    - pattern: $COL.add($IDX, $X)
+      from: $X
+      to: $COL
+    - pattern: $COL.put($KEY, $X)
+      from: $X
+      to: $COL
+    - pattern: $COL.addAll($X)
+      from: $X
+      to: $COL
+  pattern-sinks:
+    - patterns:
+        - pattern-either:
+            - pattern: (javax.servlet.http.HttpServletResponse $R).sendRedirect($URL)
+            - pattern: (jakarta.servlet.http.HttpServletResponse $R).sendRedirect($URL)
+            - pattern: (javax.servlet.http.HttpServletResponse $R).setHeader("Location", $URL)
+            - pattern: (jakarta.servlet.http.HttpServletResponse $R).setHeader("Location", $URL)
+            - pattern: new org.springframework.web.servlet.view.RedirectView($URL, ...)
+            - pattern: (org.springframework.web.servlet.view.RedirectView $V).setUrl($URL)
+            - pattern: (org.springframework.http.HttpHeaders $H).setLocation($URL)
+        - focus-metavariable: $URL
+    # 뷰 이름 "redirect:" + 입력, "redirect:/" + 입력 (입력이 /evil.example 이면 redirect://evil.example 이 된다).
+    # "redirect:/board/…" 처럼 경로가 고정된 것은 여기에 맞지 않는다
+    - patterns:
+        - pattern: '"$PREFIX" + $URL'
+        - metavariable-regex:
+            metavariable: $PREFIX
+            regex: ^redirect:/?$
+        - focus-metavariable: $URL

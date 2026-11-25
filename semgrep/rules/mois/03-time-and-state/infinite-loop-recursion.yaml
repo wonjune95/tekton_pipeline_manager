@@ -1,0 +1,106 @@
+rules:
+- id: mois-3-02-infinite-loop-recursion
+  languages: [java]
+  severity: WARNING
+  message: "[행안부 시간 및 상태] 종료되지 않는 반복문 또는 재귀 함수: 빠져나오는 조건(break·return·throw 또는 재귀의 기저 조건)이 없음 — 반복·재귀 횟수를 제한하는 조건을 둘 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "시간 및 상태"
+    mois-item-no: "3-2"
+    mois-item: "종료되지 않는 반복문 또는 재귀 함수"
+    cwe: "CWE-674; CWE-835"
+    gate: warn
+  pattern-either:
+    # 무한 반복문: 반복문을 빠져나오는 문장이 하나도 없음
+    - patterns:
+        - pattern-either:
+            - pattern: while (true) $BODY;
+            - pattern: for (;;) $BODY;
+            - pattern: do $BODY; while (true);
+        - pattern-not:
+            patterns:
+              - pattern-either:
+                  - pattern: while (true) $BODY;
+                  - pattern: for (;;) $BODY;
+                  - pattern: do $BODY; while (true);
+              - metavariable-pattern:
+                  metavariable: $BODY
+                  pattern-either:
+                    - pattern: return ...;
+                    - pattern: throw ...;
+                    - pattern: break $LBL;
+                    # 안쪽 반복문·switch 의 break 는 바깥 반복문을 끝내지 못한다
+                    - patterns:
+                        - pattern: break;
+                        # (`for (...)` 는 for-each 에도 맞는다)
+                        - pattern-not-inside: for (...) $S;
+                        - pattern-not-inside: while ($WC) $S;
+                        - pattern-not-inside: do $S; while ($WC);
+                        - pattern-not-inside: "switch ($SW) { case $L: ... }"
+    # 재귀 함수: 같은 이름·인자 수·인자 타입으로 자신을 호출하는데 그 호출이 조건 없이 실행됨
+    - patterns:
+        - pattern-either:
+            - patterns:
+                - pattern-inside: |
+                    $RET $M() { ... }
+                - pattern-either:
+                    - pattern: $M()
+                    - pattern: this.$M()
+            - patterns:
+                - pattern-inside: |
+                    $RET $M($T1 $P1) { ... }
+                - pattern-either:
+                    - pattern: $M(($T1 $A1))
+                    - pattern: this.$M(($T1 $A1))
+            - patterns:
+                - pattern-inside: |
+                    $RET $M($T1 $P1, $T2 $P2) { ... }
+                - pattern-either:
+                    - pattern: $M(($T1 $A1), ($T2 $A2))
+                    - pattern: this.$M(($T1 $A1), ($T2 $A2))
+            - patterns:
+                - pattern-inside: |
+                    $RET $M($T1 $P1, $T2 $P2, $T3 $P3) { ... }
+                - pattern-either:
+                    - pattern: $M(($T1 $A1), ($T2 $A2), ($T3 $A3))
+                    - pattern: this.$M(($T1 $A1), ($T2 $A2), ($T3 $A3))
+        # 기저 조건: 호출이 조건문·반복문 안에 있거나(실행되지 않을 수 있음), 호출보다 앞에서 return·throw 하는 if 가 있음
+        - pattern-not-inside:
+            patterns:
+              - pattern: if ($IFC) $IFS;
+              - focus-metavariable: $IFS
+        - pattern-not-inside:
+            patterns:
+              - pattern: if ($IFC) $IFS; else $ELS;
+              - focus-metavariable: $ELS
+        - pattern-not-inside: "switch ($SW) { case $L: ... }"
+        - pattern-not-inside:
+            patterns:
+              - pattern: |
+                  if ($IFC) $IFS;
+                  ...
+              - metavariable-pattern:
+                  metavariable: $IFS
+                  pattern-either:
+                    - pattern: return ...;
+                    - pattern: throw ...;
+        # 조건식에서는 평가되지 않을 수 있는 쪽(?: 의 두 갈래, &&·|| 의 오른쪽)에 있을 때만 제외
+        - pattern-not-inside:
+            patterns:
+              - pattern: "$TCOND ? $TYES : $TNO"
+              - focus-metavariable: $TYES
+        - pattern-not-inside:
+            patterns:
+              - pattern: "$TCOND ? $TYES : $TNO"
+              - focus-metavariable: $TNO
+        - pattern-not-inside:
+            patterns:
+              - pattern: $AND1 && $AND2
+              - focus-metavariable: $AND2
+        - pattern-not-inside:
+            patterns:
+              - pattern: $OR1 || $OR2
+              - focus-metavariable: $OR2
+        - pattern-not-inside: for (...) $FORS;
+        - pattern-not-inside: while ($WC) $WS;

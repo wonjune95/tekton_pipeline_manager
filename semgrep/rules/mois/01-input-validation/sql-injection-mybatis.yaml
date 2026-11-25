@@ -1,0 +1,47 @@
+rules:
+- id: mois-1-01-sql-injection-mybatis
+  languages: [xml]
+  severity: WARNING
+  message: "[행안부 입력데이터 검증 및 표현] SQL 삽입: MyBatis·iBatis 매퍼에서 ${}($…$) 문자열 치환으로 질의문을 만듦 — 값은 #{}(#…#) 바인딩으로 넘기고, 컬럼·정렬 기준처럼 바인딩할 수 없는 값은 허용 목록으로 검증한 뒤 사용할 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "입력데이터 검증 및 표현"
+    mois-item-no: "1-1"
+    mois-item: "SQL 삽입"
+    cwe: "CWE-89"
+    gate: warn
+  pattern-either:
+    # MyBatis 3: <mapper> 안의 ${...}
+    - patterns:
+        - pattern-inside: <mapper ...>...</mapper>
+        - pattern-regex: \$\{[^}]+\}
+        # XML 주석 안에 적힌 것은 뺀다 (뒤에 '<!--' 없이 '-->' 가 오면 주석 안)
+        - pattern-not-regex: \$\{[^}]+\}(?=(?:(?!<!--)[\s\S])*?-->)
+    # iBatis 2: <sqlMap> 안의 $...$
+    - patterns:
+        - pattern-inside: <sqlMap ...>...</sqlMap>
+        - pattern-regex: \$[A-Za-z_][A-Za-z0-9_.\[\]]*\$
+        - pattern-not-regex: \$[A-Za-z_][A-Za-z0-9_.\[\]]*\$(?=(?:(?!<!--)[\s\S])*?-->)
+- id: mois-1-01-sql-injection-mybatis-annotation
+  languages: [java]
+  severity: WARNING
+  message: "[행안부 입력데이터 검증 및 표현] SQL 삽입: MyBatis 애너테이션 질의문에서 ${} 문자열 치환을 사용함 — 값은 #{} 바인딩으로 넘길 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "입력데이터 검증 및 표현"
+    mois-item-no: "1-1"
+    mois-item: "SQL 삽입"
+    cwe: "CWE-89"
+    gate: warn
+  patterns:
+    - pattern-either:
+        - pattern: '@$ANN(<... "$SQL" ...>)'
+        - pattern: '@$ANN(value = <... "$SQL" ...>)'
+    - metavariable-regex:
+        metavariable: $ANN
+        regex: ^(Select|Insert|Update|Delete)$
+    - metavariable-regex:
+        metavariable: $SQL
+        regex: (?s).*\$\{.*

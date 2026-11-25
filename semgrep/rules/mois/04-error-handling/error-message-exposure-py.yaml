@@ -1,0 +1,86 @@
+rules:
+- id: mois-4-01-error-message-exposure-py
+  languages: [python]
+  severity: WARNING
+  message: "[행안부 에러처리] 오류 메시지 정보노출: 예외 정보(트레이스백·예외 메시지)를 콘솔·HTTP 응답으로 내보내거나 디버그 모드가 켜져 있음 — 사용자에게는 정해진 오류 코드만 주고 상세 내용은 logging 으로 남기며, 운영에서는 DEBUG 를 끌 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "에러처리"
+    mois-item-no: "4-1"
+    mois-item: "오류 메시지 정보노출"
+    cwe: "CWE-209"
+    gate: warn
+  pattern-either:
+    # 트레이스백을 콘솔로 출력
+    - pattern: traceback.print_exc(...)
+    - pattern: traceback.print_exception(...)
+    - pattern: traceback.print_stack(...)
+    # 트레이스백 문자열을 응답으로 반환
+    - pattern: return <... traceback.format_exc(...) ...>
+    - patterns:
+        - pattern-either:
+            - pattern: $RESP(..., <... traceback.format_exc(...) ...>, ...)
+            - pattern: $RESP(..., $KW=<... traceback.format_exc(...) ...>, ...)
+        - metavariable-regex:
+            metavariable: $RESP
+            regex: ^(HttpResponse\w*|JsonResponse|Response|JSONResponse|PlainTextResponse|HTMLResponse|jsonify|make_response|HTTPException|abort|flash)$
+    # 잡은 예외(또는 오류 처리기의 예외 인자)를 응답·콘솔로 내보냄
+    - patterns:
+        - pattern-either:
+            - pattern-inside: |
+                try:
+                    ...
+                except $T as $E:
+                    ...
+            - pattern-inside: |
+                try:
+                    ...
+                except $T as $E:
+                    ...
+                else:
+                    ...
+            - pattern-inside: |
+                try:
+                    ...
+                except $T as $E:
+                    ...
+                finally:
+                    ...
+            - pattern-inside: |
+                try:
+                    ...
+                except $T as $E:
+                    ...
+                else:
+                    ...
+                finally:
+                    ...
+            - pattern-inside: |
+                @$APP.errorhandler(...)
+                def $H($E):
+                    ...
+            - pattern-inside: |
+                @$APP.exception_handler(...)
+                def $H($REQ, $E):
+                    ...
+        - pattern-either:
+            - pattern: return <... str($E) ...>
+            - pattern: return <... repr($E) ...>
+            - pattern: return <... $E.args ...>
+            - pattern: return <... f"...{$E}..." ...>
+            - pattern: print(..., <... $E ...>, ...)
+            - patterns:
+                - pattern-either:
+                    - pattern: $RESP(..., <... $E ...>, ...)
+                    - pattern: $RESP(..., $KW=<... $E ...>, ...)
+                - metavariable-regex:
+                    metavariable: $RESP
+                    regex: ^(HttpResponse\w*|JsonResponse|Response|JSONResponse|PlainTextResponse|HTMLResponse|jsonify|make_response|HTTPException|abort|flash)$
+    # 디버그 모드: 오류 화면에 트레이스백·설정값이 그대로 나옴
+    - pattern: DEBUG = True
+    - pattern: $APP.run(..., debug=True, ...)
+    - pattern: $APP.debug = True
+    - pattern: $APP.config["DEBUG"] = True
+    - pattern: FastAPI(..., debug=True, ...)
+    - pattern: Starlette(..., debug=True, ...)

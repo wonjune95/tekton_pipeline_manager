@@ -1,0 +1,89 @@
+rules:
+- id: mois-6-01-shared-field-in-singleton-py
+  languages: [python]
+  severity: WARNING
+  message: "[행안부 캡슐화] 잘못된 세션에 의한 데이터 정보 노출: 요청 처리 함수가 전역 변수나 뷰 클래스의 클래스 속성에 요청별 데이터를 저장함 — 모든 사용자·스레드가 공유하므로 지역 변수나 세션(request.session)을 쓸 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "캡슐화"
+    mois-item-no: "6-1"
+    mois-item: "잘못된 세션에 의한 데이터 정보 노출"
+    cwe: "CWE-488; CWE-543"
+    gate: warn
+  pattern-either:
+    # (1) 요청 처리 함수(뷰·라우트·뷰 클래스 메서드)에서 global 변수에 대입
+    - patterns:
+        - pattern-either:
+            # 'request' 는 타입 표기가 붙은 인자(request: HttpRequest)에도 맞는다
+            - pattern-inside: |
+                def $H(request, ...):
+                    ...
+            - pattern-inside: |
+                def $H(self, request, ...):
+                    ...
+            - patterns:
+                - pattern-inside: |
+                    @$APP.$METHOD(...)
+                    def $H(...):
+                        ...
+                - metavariable-regex:
+                    metavariable: $METHOD
+                    regex: ^(get|post|put|patch|delete|head|options|route|api_route|websocket)$
+        - pattern-inside: |
+            def $H(...):
+                ...
+                global $V
+                ...
+        - pattern-either:
+            - pattern: $V = $VAL
+            - pattern: $V += $VAL
+            - pattern: $V -= $VAL
+    # (2) 뷰 클래스(Django View·DRF APIView/ViewSet·Flask MethodView 등)의 클래스 속성(list·dict·set)을 메서드에서 변경
+    #     — 인스턴스는 요청마다 새로 만들어져도 클래스 속성은 모든 요청이 공유한다
+    - patterns:
+        - pattern-inside: |
+            class $C(..., $BASE, ...):
+                ...
+                $F = $INIT
+                ...
+        - metavariable-regex:
+            metavariable: $BASE
+            regex: .*(View|ViewSet|Resource)$
+        - metavariable-pattern:
+            metavariable: $INIT
+            pattern-either:
+              - pattern: "[...]"
+              - pattern: "{...}"
+              - pattern: list(...)
+              - pattern: dict(...)
+              - pattern: set(...)
+              - pattern: collections.defaultdict(...)
+        - pattern-inside: |
+            def $M(self, ...):
+                ...
+        - pattern-either:
+            - patterns:
+                - pattern-either:
+                    - pattern: self.$F.$MUT(...)
+                    - pattern: $C.$F.$MUT(...)
+                - metavariable-regex:
+                    metavariable: $MUT
+                    regex: ^(append|extend|insert|add|update|setdefault|pop|popitem|remove|discard|clear)$
+            - pattern: self.$F[$K] = $VAL
+            - pattern: $C.$F[$K] = $VAL
+    # (3) 뷰 클래스의 메서드에서 클래스 속성 자체를 다시 대입: ReportView.last_user = ..., self.__class__.x = ...
+    - patterns:
+        - pattern-inside: |
+            class $C(..., $BASE, ...):
+                ...
+        - metavariable-regex:
+            metavariable: $BASE
+            regex: .*(View|ViewSet|Resource)$
+        - pattern-inside: |
+            def $M(self, ...):
+                ...
+        - pattern-either:
+            - pattern: $C.$F = $VAL
+            - pattern: self.__class__.$F = $VAL
+            - pattern: type(self).$F = $VAL

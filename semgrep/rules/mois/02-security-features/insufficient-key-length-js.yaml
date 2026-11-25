@@ -1,0 +1,81 @@
+rules:
+- id: mois-2-07-insufficient-key-length-js
+  languages: [javascript, typescript]
+  severity: ERROR
+  message: "[행안부 보안기능] 충분하지 않은 키 길이 사용: RSA·DSA·DH 2048비트, ECC 256비트, 대칭키 128비트 미만 — RSA·DSA·DH 는 2048비트 이상(modulusLength: 2048), 타원곡선은 P-256(prime256v1) 이상, AES 는 128비트(16바이트) 이상 키를 사용할 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "보안기능"
+    mois-item-no: "2-7"
+    mois-item: "충분하지 않은 키 길이 사용"
+    cwe: "CWE-326"
+    gate: block
+  # 상수 값만 본다 (변수로 넘기면 놓침).
+  # modulusLength·primeLength·namedCurve 는 Node crypto(generateKeyPair)·WebCrypto(subtle.generateKey) 전용 옵션 이름이라 객체 항목으로 본다
+  pattern-either:
+    # 공개키 (진단가이드: RSA·DSA 2,048비트 이상): generateKeyPair('rsa', { modulusLength: 1024 }), subtle.generateKey({ name: 'RSA-OAEP', modulusLength: 1024 })
+    - patterns:
+        - pattern-either:
+            - pattern: |
+                {..., modulusLength: $N, ...}
+            - pattern: |
+                {..., primeLength: $N, ...}
+            - pattern: $C.createDiffieHellman($N, ...)
+            # node-forge: forge.pki.rsa.generateKeyPair(1024) / ({ bits: 1024 })
+            - pattern: $F.pki.rsa.generateKeyPair($N, ...)
+            - pattern: |
+                $F.pki.rsa.generateKeyPair({..., bits: $N, ...}, ...)
+        - metavariable-comparison:
+            metavariable: $N
+            comparison: $N < 2048
+        - focus-metavariable: $N
+    # 내장 DH 그룹 modp1(768)·modp2(1024)·modp5(1536)
+    - patterns:
+        - pattern-either:
+            - pattern: $C.getDiffieHellman("$G")
+            - pattern: $C.createDiffieHellmanGroup("$G")
+        - metavariable-regex:
+            metavariable: $G
+            regex: ^modp[125]$
+    # ECC (진단가이드: 256 이상) — secp192r1·prime192v1·secp224r1·P-192·sect163k1·brainpoolP160r1 등 256비트 미만 곡선
+    - patterns:
+        - pattern-either:
+            - pattern: |
+                {..., namedCurve: "$CURVE", ...}
+            - pattern: $C.createECDH("$CURVE")
+        - metavariable-regex:
+            metavariable: $CURVE
+            regex: (?i)^(secp|sect|prime|brainpoolp|p-)(\d{2}|1\d\d|2[0-4]\d|25[0-5])(\D.*)?$
+        - focus-metavariable: $CURVE
+    # 대칭키 128비트 미만: generateKeySync('aes', { length: 64 }) (단위 비트)
+    - patterns:
+        - pattern-either:
+            - pattern: |
+                $C.generateKey($T, {..., length: $N, ...}, ...)
+            - pattern: |
+                $C.generateKeySync($T, {..., length: $N, ...})
+        - metavariable-comparison:
+            metavariable: $N
+            comparison: $N < 128
+        - focus-metavariable: $N
+    # 키로 쓰는 난수 바이트가 16바이트(128비트) 미만. 변수 이름에 key 가 있을 때만
+    - patterns:
+        - pattern: $KEY = $C.randomBytes($N)
+        - metavariable-regex:
+            metavariable: $KEY
+            regex: (?i)^.*key.*$
+        - metavariable-comparison:
+            metavariable: $N
+            comparison: $N < 16
+    # 키 유도 길이가 16바이트 미만: pbkdf2Sync(pw, salt, iter, 8, 'sha256'), scryptSync(pw, salt, 8)
+    - patterns:
+        - pattern-either:
+            - pattern: $C.pbkdf2($PW, $SALT, $ITER, $N, ...)
+            - pattern: $C.pbkdf2Sync($PW, $SALT, $ITER, $N, ...)
+            - pattern: $C.scrypt($PW, $SALT, $N, ...)
+            - pattern: $C.scryptSync($PW, $SALT, $N, ...)
+        - metavariable-comparison:
+            metavariable: $N
+            comparison: $N < 16
+        - focus-metavariable: $N

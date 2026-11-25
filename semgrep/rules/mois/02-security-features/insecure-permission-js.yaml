@@ -1,0 +1,66 @@
+rules:
+- id: mois-2-03-insecure-permission-js
+  languages: [javascript, typescript]
+  severity: WARNING
+  message: "[행안부 보안기능] 중요한 자원에 대한 잘못된 권한 설정: 모든 사용자에게 쓰기 권한을 주는 모드(0o777·0o666 등)나 umask 0 — 소유자 전용 최소 권한(파일 0o600·0o640, 디렉터리 0o700·0o750)으로 설정할 것 (대상이 설정·실행 파일 등 중요 자원인지 확인)"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "보안기능"
+    mois-item-no: "2-3"
+    mois-item: "중요한 자원에 대한 잘못된 권한 설정"
+    cwe: "CWE-732"
+    gate: warn
+  # 상수 모드만 본다 (변수로 넘기면 놓침). fs 메서드 이름(chmod·mkdir·writeFile …)은 fs·fs/promises·fs-extra 공통이라 수신 객체는 보지 않는다
+  pattern-either:
+    # 다른 사용자(others)에게 쓰기 권한: 8진수 마지막 자리가 2·3·6·7 (0o777, 0o666, 0o646, 레거시 0777),
+    # 10진수 511·438, fs 가 8진수로 읽는 문자열 '777'·'0666'
+    - patterns:
+        - pattern-either:
+            - pattern: $FS.chmod($P, $MODE, ...)
+            - pattern: $FS.chmodSync($P, $MODE)
+            - pattern: $FS.lchmod($P, $MODE, ...)
+            - pattern: $FS.lchmodSync($P, $MODE)
+            - pattern: $FS.fchmod($FD, $MODE, ...)
+            - pattern: $FS.fchmodSync($FD, $MODE)
+            - pattern: $FS.mkdir($P, $MODE, ...)
+            - pattern: $FS.mkdirSync($P, $MODE)
+            - pattern: $FS.open($P, $FLAGS, $MODE, ...)
+            - pattern: $FS.openSync($P, $FLAGS, $MODE)
+            # 옵션 객체의 mode: mkdir(p, { recursive: true, mode: 0o777 }), writeFile(p, d, { mode: 0o666 }), createWriteStream(p, { mode })
+            # (이 가지에만 있는 $FN 조건은 가지 안에 둔다 — 바깥에 두면 다른 가지가 조용히 무효가 된다)
+            - patterns:
+                - pattern: |
+                    $FS.$FN(..., {..., mode: $MODE, ...}, ...)
+                - metavariable-regex:
+                    metavariable: $FN
+                    regex: ^(mkdir|mkdirSync|writeFile|writeFileSync|appendFile|appendFileSync|createWriteStream|open|outputFile|outputFileSync|ensureDir|ensureDirSync|mkdirp|mkdirs)$
+        - metavariable-regex:
+            metavariable: $MODE
+            regex: ^(0[oO]?[0-7]*[2367]|["']0?[0-7]{2}[2367]["']|511|438)$
+    # umask 0 → 이후 만드는 파일이 모두에게 열림
+    - patterns:
+        - pattern: process.umask($M)
+        - metavariable-regex:
+            metavariable: $M
+            regex: ^(0[oO]?0*|["']0+["'])$
+    # 셸 명령으로 chmod 777·666·o+w, umask 0. 명령이 문자열(따옴표·백틱)로 시작하면 본다 ("chmod 777 " + p, `chmod 777 ${p}` 포함)
+    # $FN 은 child_process.exec(...) 처럼 점이 붙은 이름에도 맞는다
+    - patterns:
+        - pattern: $FN($CMD, ...)
+        - metavariable-regex:
+            metavariable: $FN
+            regex: ^(\w+\.)*(exec|execSync)$
+        - metavariable-regex:
+            metavariable: $CMD
+            regex: (?i)^["'`]\s*(sudo\s+)?(umask\s+0+\b|chmod\s+(-\w+\s+)*0?[0-7]?[0-7][2367]\b|chmod\s+(-\w+\s+)*[ugoa]*[oa][ugoa]*\+[rxXst]*w).*
+    # spawn('chmod', ['777', p]), execFile('chmod', ['o+w', p])
+    - patterns:
+        - pattern: |
+            $FN("chmod", [..., "$PERM", ...], ...)
+        - metavariable-regex:
+            metavariable: $FN
+            regex: ^(\w+\.)*(spawn|spawnSync|execFile|execFileSync)$
+        - metavariable-regex:
+            metavariable: $PERM
+            regex: ^(0?[0-7]?[0-7][2367]|[ugoa]*[oa][ugoa]*\+[rxXst]*w[rxXst]*)$

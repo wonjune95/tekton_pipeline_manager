@@ -1,0 +1,52 @@
+rules:
+- id: mois-6-03-private-array-returned-py
+  languages: [python]
+  severity: WARNING
+  message: "[행안부 캡슐화] Public 메소드부터 반환된 Private 배열: 비공개 속성(_이름·__이름)에 담긴 list·dict·set 을 공개 메서드가 그대로 반환함 — 외부에서 내용을 바꿀 수 있으니 복사본(list(...)·dict(...)·copy.deepcopy)을 반환할 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "캡슐화"
+    mois-item-no: "6-3"
+    mois-item: "Public 메소드부터 반환된 Private 배열"
+    cwe: "CWE-495"
+    gate: warn
+  patterns:
+    # 비공개 속성이 가변 컬렉션으로 초기화된 클래스 (__init__ 또는 클래스 속성)
+    - pattern-either:
+        - pattern-inside: |
+            class $C(...):
+                ...
+                def __init__(self, ...):
+                    ...
+                    self.$F = $INIT
+                    ...
+                ...
+        - pattern-inside: |
+            class $C(...):
+                ...
+                $F = $INIT
+                ...
+    - metavariable-regex:
+        metavariable: $F
+        regex: ^_
+    - metavariable-pattern:
+        metavariable: $INIT
+        pattern-either:
+          - pattern: "[...]"
+          - pattern: "{...}"
+          - pattern: list(...)
+          - pattern: dict(...)
+          - pattern: set(...)
+          - pattern: bytearray(...)
+          - pattern: collections.defaultdict(...)
+          - pattern: collections.OrderedDict(...)
+          - pattern: collections.deque(...)
+    # 공개 메서드(프로퍼티 포함)가 그 속성을 그대로 반환
+    - pattern-inside: |
+        def $M(self, ...):
+            ...
+    - metavariable-regex:
+        metavariable: $M
+        regex: ^[A-Za-z]
+    - pattern: return self.$F

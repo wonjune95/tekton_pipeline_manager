@@ -1,0 +1,51 @@
+rules:
+- id: mois-7-01-dns-security-decision-js
+  languages: [javascript, typescript]
+  severity: WARNING
+  message: "[행안부 API 오용] DNS lookup에 의존한 보안결정: DNS 조회(dns.reverse·dns.lookup) 결과인 호스트 이름·주소를 비교해 신뢰 여부를 판단함 — DNS 응답은 위조될 수 있으니 접속 IP 주소(req.socket.remoteAddress)나 인증 정보처럼 위조하기 어려운 값으로 판단할 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "API 오용"
+    mois-item-no: "7-1"
+    mois-item: "DNS lookup에 의존한 보안결정"
+    cwe: "CWE-350; CWE-247"
+    gate: warn
+  patterns:
+    # DNS 조회 결과를 받는 자리: 콜백의 두 번째 매개변수, await 한 결과, then 의 매개변수
+    # dns 는 require·import 로 확인한다 (import { reverse } from 'dns' 처럼 이름만 가져온 호출도 맞는다)
+    - pattern-either:
+        - pattern-inside: dns.$FN($HOST, ..., ($ERR, $N, ...) => { ... })
+        - pattern-inside: dns.$FN($HOST, ..., function ($ERR, $N, ...) { ... })
+        - pattern-inside: |
+            $N = await dns.promises.$FN(...);
+            ...
+        - patterns:
+            - pattern-inside: |
+                $N = await $DNSP.$FN(...);
+                ...
+            - metavariable-regex:
+                metavariable: $DNSP
+                regex: ^(dns\.promises|dnsPromises|dnsp|resolver)$
+        - pattern-inside: dns.promises.$FN(...).then(($N) => $BODY)
+    - metavariable-regex:
+        metavariable: $FN
+        regex: ^(reverse|lookup|lookupService|resolve|resolve4|resolve6|resolvePtr|resolveCname)$
+    # 그 결과를 비교·검사함
+    - pattern-either:
+        - pattern: <... $N ...> === $OTHER
+        - pattern: $OTHER === <... $N ...>
+        - pattern: <... $N ...> == $OTHER
+        - pattern: $OTHER == <... $N ...>
+        - pattern: <... $N ...> !== $OTHER
+        - pattern: $OTHER !== <... $N ...>
+        - pattern: <... $N ...> != $OTHER
+        - pattern: $OTHER != <... $N ...>
+        - pattern: $RE.test(<... $N ...>)
+        - pattern: $LIST.includes(<... $N ...>)
+        - pattern: $LIST.indexOf(<... $N ...>)
+        - patterns:
+            - pattern: <... $N ...>.$CMP(...)
+            - metavariable-regex:
+                metavariable: $CMP
+                regex: ^(endsWith|startsWith|includes|indexOf|some|every|find|match|test)$

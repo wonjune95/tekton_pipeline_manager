@@ -1,0 +1,68 @@
+rules:
+- id: mois-2-12-persistent-cookie-js
+  languages: [javascript, typescript]
+  severity: WARNING
+  message: "[행안부 보안기능] 사용자 하드디스크에 저장되는 쿠키를 통한 정보 노출: 쿠키·세션 만료시간이 하루를 넘는 영속 쿠키 — 만료시간을 최소로 줄이거나 세션 쿠키(만료 미지정)로 두고, 쿠키에 중요정보를 저장하지 말 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "보안기능"
+    mois-item-no: "2-12"
+    mois-item: "사용자 하드디스크에 저장되는 쿠키를 통한 정보 노출"
+    cwe: "CWE-539"
+    gate: warn
+  # 진단가이드 예: 1년은 취약, 1일은 안전 → 하루 초과를 잡는다. 상수(곱셈식 포함)만 본다 (변수로 넘기면 놓침)
+  # 단위가 라이브러리마다 다르다: Express·Koa·express-session·cookie-session 은 밀리초, Fastify·Next.js 는 초, js-cookie 는 일
+  pattern-either:
+    # 밀리초 (86400000 = 1일)
+    - patterns:
+        - pattern-either:
+            # Express res.cookie(name, value, { maxAge })
+            - pattern: |
+                $RES.cookie($K, $V, {..., maxAge: $N, ...})
+            - pattern: |
+                $RES.cookie($K, $V, {..., expires: new Date(Date.now() + $N), ...})
+            # Koa ctx.cookies.set(name, value, { maxAge })
+            - pattern: |
+                ctx.cookies.set($K, $V, {..., maxAge: $N, ...})
+            # express-session({ cookie: { maxAge } })
+            - pattern: |
+                {..., cookie: {..., maxAge: $N, ...}, ...}
+            # cookie-session({ maxAge })
+            - pattern: |
+                cookieSession({..., maxAge: $N, ...})
+            - pattern: $REQ.session.cookie.maxAge = $N
+            - pattern: $REQ.sessionOptions.maxAge = $N
+        - metavariable-comparison:
+            metavariable: $N
+            comparison: $N > 86400000
+        - focus-metavariable: $N
+    # 초 (86400 = 1일): Fastify reply.setCookie, Next.js cookies().set · response.cookies.set
+    - patterns:
+        - pattern-either:
+            - pattern: |
+                $REPLY.setCookie($K, $V, {..., maxAge: $N, ...})
+            - pattern: |
+                cookies().set($K, $V, {..., maxAge: $N, ...})
+            - pattern: |
+                $RES.cookies.set($K, $V, {..., maxAge: $N, ...})
+        - pattern-not: |
+            ctx.cookies.set(...)
+        - metavariable-comparison:
+            metavariable: $N
+            comparison: $N > 86400
+        - focus-metavariable: $N
+    # 일: js-cookie Cookies.set(name, value, { expires: 7 })
+    - patterns:
+        - pattern: |
+            Cookies.set($K, $V, {..., expires: $N, ...})
+        - metavariable-comparison:
+            metavariable: $N
+            comparison: $N > 1
+        - focus-metavariable: $N
+    # 브라우저 document.cookie 에 max-age(초) 를 직접 적음: "token=...; max-age=31536000"
+    - patterns:
+        - pattern: document.cookie = $C
+        - metavariable-regex:
+            metavariable: $C
+            regex: (?i)^.*max-age=(\d{6,}|8640[1-9]|864[1-9]\d|86[5-9]\d\d|8[7-9]\d{3}|9\d{4}).*$

@@ -1,0 +1,19 @@
+rules:
+- id: mois-4-03-improper-exception-handling-py
+  languages: [python]
+  severity: WARNING
+  message: "[행안부 에러처리] 부적절한 예외 처리: 광범위한 예외(except:·Exception·BaseException)를 잡고 다시 발생시키지 않음 — 발생 가능한 예외를 구체적으로 나눠 처리하고, 모두 잡아야 하면 기록 후 raise 로 다시 던질 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "에러처리"
+    mois-item-no: "4-3"
+    mois-item: "부적절한 예외 처리"
+    cwe: "CWE-754"
+    gate: warn
+  # except: / except Exception / except BaseException (튜플 포함) 절의 본문에 raise 문이 한 번도 없는 경우.
+  # Semgrep 의 Python try 패턴은 except 형태마다 따로 써야 하고 중첩된 raise 를 보지 못해 줄 단위 정규식으로 잡는다:
+  # 머리줄 → (더 깊이 들여쓴, raise 문이 없는 줄 | 빈 줄)* → 본문이 끝남(다음 줄이 더 깊지 않음)
+  # raise 는 "문장"일 때만 인정한다: 줄 머리의 raise, 또는 `if …: raise`·`else: raise` 한 줄.
+  # 주석이나 문자열 안의 낱말 raise("could not raise ticket")는 다시 던진 것이 아니다
+  pattern-regex: '(?m)^([ \t]*)except(?:[ \t]*|[ \t]+[^\n:]*\b(?:Exception|BaseException)\b[^\n:]*):(?![ \t]*raise\b)[^\n]*\n(?:(?:\1[ \t]+(?![ \t]*(?:(?:if|elif|else)\b[^\n#]*:[ \t]*)?raise\b)[^\n]*|[ \t]*)(?:\n|\z))*+(?!(?:[ \t]*\n)*\1[ \t]+\S)'

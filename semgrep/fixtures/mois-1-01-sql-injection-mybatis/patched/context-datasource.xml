@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 매퍼가 아닌 XML 의 ${} (Spring 속성 자리표시자) 는 탐지 대상이 아니다 -->
+<beans xmlns="http://www.springframework.org/schema/beans">
+  <bean id="dataSource" class="org.apache.commons.dbcp2.BasicDataSource" destroy-method="close">
+    <property name="driverClassName" value="${Globals.DriverClassName}"/>
+    <property name="url" value="${Globals.Url}"/>
+    <property name="username">
+      <value>${Globals.UserName}</value>
+    </property>
+  </bean>
+</beans>

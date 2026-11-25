@@ -1,0 +1,50 @@
+rules:
+- id: mois-7-02-dangerous-api-js
+  languages: [javascript, typescript]
+  severity: WARNING
+  message: "[행안부 API 오용] 취약한 API 사용: 요청 처리 함수에서 process.exit()·abort() 로 서버 프로세스를 끝내거나, 폐기된 Buffer 생성자(new Buffer)·초기화하지 않은 버퍼(Buffer.allocUnsafe)를 요청 값 크기로 만듦 — 오류는 HTTP 오류 응답으로 돌려주고, 버퍼는 Buffer.from·Buffer.alloc 으로 만들 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "API 오용"
+    mois-item-no: "7-2"
+    mois-item: "취약한 API 사용"
+    cwe: "CWE-676; CWE-382"
+    gate: warn
+  pattern-either:
+    # (1) 요청 처리 함수(첫 매개변수가 req·request·ctx) 안의 프로세스 종료 (CWE-382) — 한 요청이 모든 사용자의 서비스를 멈춘다
+    - patterns:
+        - pattern-either:
+            - pattern-inside: |
+                function $H($REQ, ...) { ... }
+            - pattern-inside: |
+                ($REQ, ...) => { ... }
+            - pattern-inside: |
+                $H($REQ, ...) { ... }
+        - metavariable-regex:
+            metavariable: $REQ
+            regex: ^(req|request|ctx)$
+        - pattern-either:
+            - pattern: process.exit(...)
+            - pattern: process.abort(...)
+            - pattern: process.kill(process.pid, ...)
+    # (2) 폐기된 Buffer 생성자 (DEP0005): 숫자를 넘기면 이전 버전에서 초기화하지 않은 메모리를 돌려주고, 인자 형식에 따라 동작이 바뀐다 (CWE-676)
+    - pattern: new Buffer(...)
+    - patterns:
+        - pattern: Buffer($ARG, ...)
+        - pattern-not-inside: new Buffer(...)
+    # (3) 요청 값으로 크기를 정한 초기화하지 않은 버퍼: 다 채우지 않으면 메모리에 남은 다른 데이터가 응답에 섞인다
+    - patterns:
+        - pattern-either:
+            - pattern: Buffer.allocUnsafe(<... $REQ.$ATTR ...>)
+            - pattern: Buffer.allocUnsafeSlow(<... $REQ.$ATTR ...>)
+            - patterns:
+                - pattern-inside: |
+                    $SIZE = <... $REQ.$ATTR ...>;
+                    ...
+                - pattern-either:
+                    - pattern: Buffer.allocUnsafe(<... $SIZE ...>)
+                    - pattern: Buffer.allocUnsafeSlow(<... $SIZE ...>)
+        - metavariable-regex:
+            metavariable: $REQ
+            regex: ^(req|request|ctx|ctx\.request)$

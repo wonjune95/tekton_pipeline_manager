@@ -1,0 +1,22 @@
+rules:
+# 중요정보 평문 저장·전송: 비밀번호가 해시·암호화 없이 DB·파일·네트워크·응답으로 나감
+- id: mois-2-05-cleartext-transport
+  languages: [java]
+  severity: WARNING
+  message: "[행안부 보안기능] 암호화되지 않은 중요정보: 암호화되지 않은 http:// 채널로 연결함 (중요정보를 주고받으면 https 사용)"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "보안기능"
+    mois-item-no: "2-5"
+    mois-item: "암호화되지 않은 중요정보"
+    cwe: "CWE-319"
+    gate: warn
+  patterns:
+    - pattern-either:
+        - pattern: new java.net.URL("$U")
+        - pattern: new java.net.URI("$U")
+        - pattern: java.net.URI.create("$U")
+    - metavariable-regex:
+        metavariable: $U
+        regex: (?i)^http://(?!(localhost|127\.0\.0\.1)([:/]|$))

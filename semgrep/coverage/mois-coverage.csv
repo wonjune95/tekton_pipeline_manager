@@ -1,0 +1,50 @@
+item_no,category,item,cwe,languages,status,rule_ids,note
+1-1,입력데이터 검증 및 표현,SQL 삽입,CWE-89,java,부분,mois-1-01-sql-injection-jdbc; mois-1-01-sql-injection-spring; mois-1-01-sql-injection-mybatis; mois-1-01-sql-injection-mybatis-annotation,"JDBC Statement·Connection(executeQuery·executeUpdate·execute·addBatch·prepareStatement·prepareCall), JdbcTemplate(batchUpdate 는 모든 인자)·JPA·Hibernate 질의문 인자. Servlet·Spring 입력, 함수 안 taint 만. 숫자 변환은 변환 결과만 안전 처리. MyBatis 매퍼 XML 의 ${}·iBatis $…$, MyBatis 애너테이션 질의문의 ${} (warn — 입력 흐름은 보지 않음)"
+1-2,입력데이터 검증 및 표현,코드삽입,CWE-94; CWE-95,java,부분,mois-1-02-code-injection,"ScriptEngine·SpEL·Groovy·EL·MVEL·OGNL. matches() 검증은 guard(실패하면 빠져나가는 if 문 뒤, 또는 통과한 if 안)로 쓸 때만 인정. 함수 안 taint 만"
+1-3,입력데이터 검증 및 표현,경로 조작 및 자원 삽입,CWE-99; CWE-22,java,부분,mois-1-03-path-traversal,"Servlet·Spring 입력 → java.io/java.nio 파일 경로. 함수 안 taint 만. 정규화(getCanonicalPath·normalize) 후 기준 디렉터리+구분자 startsWith 로 검사하고 실패 시 중단하는 guard, 파일 이름만 남기는 변환, 전자정부 EgovWebUtil.filePathBlackList 계열은 인정. 서비스·DAO 가 돌려준 경로도 입력으로 봐서 오탐 가능"
+1-4,입력데이터 검증 및 표현,크로스사이트 스크립트,CWE-79,java,부분,mois-1-04-xss-servlet; mois-1-04-xss-spring-response,"Servlet 응답 Writer 출력만 (JSP·템플릿 엔진·@ResponseBody 미포함). Servlet·Spring 입력. 함수 안 taint 만. @ResponseBody·@RestController 핸들러가 외부 입력에서 만든 문자열을 반환하는 경우는 warn 규칙(xss-spring-response, produces 지정 시 제외). JSP·템플릿 안의 출력은 미포함. 전자정부 EgovWebUtil.clearXSS 계열은 인정"
+1-5,입력데이터 검증 및 표현,운영체제 명령어 삽입,CWE-78,java,부분,mois-1-05-os-command-injection,Runtime.exec·ProcessBuilder. Servlet·Spring 입력. 함수 안 taint 만
+1-6,입력데이터 검증 및 표현,위험한 형식 파일 업로드,CWE-434,,제외,,Semgrep 으로 판단할 수 없어 규칙을 두지 않음 — 수동 점검. 업로드 제한(확장자·크기·저장 위치)이 있는지는 다른 함수·설정·폼 검증에 있어 Semgrep 이 판단할 수 없음
+1-7,입력데이터 검증 및 표현,신뢰되지 않는 URL 주소로 자동접속 연결,CWE-601,java,부분,mois-1-07-open-redirect,"sendRedirect·Location 헤더·RedirectView·""redirect:""+입력. 고정 상대경로·필드 Map 허용 목록은 정화로 봄. 함수 안 taint 만"
+1-8,입력데이터 검증 및 표현,부적절한 XML 외부개체 참조,CWE-611,java,부분,mois-1-08-xxe,"같은 메서드의 파서 생성·제한 설정만 봄(DOM·SAX·StAX·Transformer·Schema·dom4j) → warn. 그 팩토리에 파서를 얻기 전에 한 제한 설정만 인정(다른 팩토리·조건문 안의 설정, FEATURE_SECURE_PROCESSING 만으로는 불인정)"
+1-9,입력데이터 검증 및 표현,XML 삽입,CWE-652; CWE-643,java,부분,mois-1-09-xpath-injection,"javax.xml.xpath·XQJ. 영숫자·_·- 만 남기는 replaceAll 은 어느 자리에서든, 작은따옴표를 지우는 replaceAll 은 작은따옴표 문자열 안에 넣을 때만 인정. 함수 안 taint 만"
+1-10,입력데이터 검증 및 표현,LDAP 삽입,CWE-90,java,부분,mois-1-10-ldap-injection,"JNDI DirContext·Spring LdapTemplate 검색 필터. LdapEncoder·필터 객체는 인정, matches() 검증은 guard(실패하면 빠져나가는 if 문 뒤, 또는 통과한 if 안)로 쓸 때만 인정. 함수 안 taint 만"
+1-11,입력데이터 검증 및 표현,크로스사이트 요청 위조,CWE-352,java,부분,mois-1-11-csrf,Spring Security CSRF 비활성화만 탐지 → warn. 서블릿 토큰 비교 여부는 판정 못함
+1-12,입력데이터 검증 및 표현,서버사이드 요청 위조,CWE-918,java,부분,mois-1-12-ssrf,URL 연결·RestTemplate·WebClient·java.net.http·Apache HttpClient·OkHttp. 고정 호스트 문자열·필드 Map 허용 목록은 정화로 봄. 함수 안 taint 만
+1-13,입력데이터 검증 및 표현,HTTP 응답분할,CWE-113,java,부분,mois-1-13-http-response-splitting,"응답 헤더 이름·값, 쿠키 값, Spring HttpHeaders. CR·LF 를 둘 다 지우고 개행을 다시 넣지 않는 것이 리터럴로 보이는 치환·URLEncoder·EgovWebUtil.removeCRLF 만 인정. 최신 서블릿 컨테이너는 헤더의 개행을 거부하므로 warn. 함수 안 taint 만"
+1-14,입력데이터 검증 및 표현,정수형 오버플로우,CWE-190,java,부분,mois-1-14-integer-overflow,외부 입력 → 배열 크기 taint. 비교식에 쓰이면 검사로 간주 → warn
+1-15,입력데이터 검증 및 표현,보안기능 결정에 사용되는 부적절한 입력값,CWE-807,,제외,,Semgrep 으로 판단할 수 없어 규칙을 두지 않음 — 수동 점검. 어떤 값이 보안 결정에 쓰이는지는 이름으로만 추정할 수 있음
+1-16,입력데이터 검증 및 표현,메모리 버퍼 오버플로우,CWE-119,,해당 없음,,C 메모리 항목(원문 예제는 C 코드뿐). Java 는 배열 경계를 실행 중 검사해 해당 없음
+1-17,입력데이터 검증 및 표현,포맷 스트링 삽입,CWE-134,java,부분,mois-1-17-format-string,String.format·printf·Formatter·MessageFormat 의 형식 인자. 함수 안 taint 만. 형식 문자열에 외부 입력이 들어가는 것만으로는 Java 에서 메모리 훼손이 없으므로 warn
+2-1,보안기능,적절한 인증 없는 중요기능 허용,CWE-306,,제외,,"Semgrep 으로 판단할 수 없어 규칙을 두지 않음 — 수동 점검. 인증이 필요한 기능인지, 인증이 다른 계층(필터·미들웨어·게이트웨이)에 있는지 판단할 수 없음"
+2-2,보안기능,부적절한 인가,CWE-285,,제외,,"Semgrep 으로 판단할 수 없어 규칙을 두지 않음 — 수동 점검. 권한 검사가 필요한지, 다른 계층에 있는지 판단할 수 없음"
+2-3,보안기능,중요한 자원에 대한 잘못된 권한 설정,CWE-732,java,부분,mois-2-03-insecure-permission,setReadable·setWritable·setExecutable(true·false)·PosixFilePermissions others 쓰기·exec 의 umask 0·chmod 777. 중요 자원 여부는 진단원 확인 → warn
+2-4,보안기능,취약한 암호화 알고리즘 사용,CWE-327,java,부분,mois-2-04-weak-cipher; mois-2-04-weak-hash,JCE Cipher(block)·MessageDigest(warn) 문자열 지정만
+2-5,보안기능,암호화되지 않은 중요정보,CWE-312; CWE-319,java,부분,mois-2-05-cleartext-transport,평문 전송만 탐지: http:// 상수 URL (무엇을 보내는지는 보지 않음 → warn). 중요정보의 평문 저장은 값이 중요정보인지 이름으로만 추정할 수 있어 규칙을 두지 않음 — 수동 점검
+2-6,보안기능,하드코드된 중요정보,CWE-259; CWE-321,java,부분,mois-2-06-hardcoded-secret,변수 이름 규칙 기반이라 오탐 가능 → warn
+2-7,보안기능,충분하지 않은 키 길이 사용,CWE-326,java,부분,mois-2-07-insufficient-key-length,RSA·DSA·DH 2048 미만·EC 256 미만·대칭키 128 미만 (상수 값만. 변수로 넘기면 놓침) → block
+2-8,보안기능,적절하지 않은 난수 값 사용,CWE-330,,제외,,Semgrep 으로 판단할 수 없어 규칙을 두지 않음 — 수동 점검. 난수가 보안 용도(토큰·OTP·세션)인지 판단할 수 없음
+2-9,보안기능,취약한 비밀번호 허용,CWE-521,,제외,,Semgrep 으로 판단할 수 없어 규칙을 두지 않음 — 수동 점검. 비밀번호 정책 검사가 다른 계층(폼·시리얼라이저·설정)에 있는지 판단할 수 없음
+2-10,보안기능,부적절한 전자서명 확인,CWE-347,java,부분,mois-2-10-improper-signature-verification,JarFile 서명 주체 미검증·서명 없는 JWT 허용·Signature.verify 결과 버림 → warn
+2-11,보안기능,부적절한 인증서 유효성 검증,CWE-295,java,부분,mois-2-11-improper-cert-validation,모두 신뢰하는 TrustManager·HostnameVerifier·자체 서명 허용 → block
+2-12,보안기능,사용자 하드디스크에 저장되는 쿠키를 통한 정보 노출,CWE-539,java,부분,mois-2-12-persistent-cookie,setMaxAge 가 하루(86400초) 초과 (가이드 예: 1년 취약·1일 안전). 쿠키 값의 중요정보 여부는 수동 → warn
+2-13,보안기능,주석문 안에 포함된 시스템 주요정보,CWE-615,java,점검보조,mois-2-13-sensitive-comment,"주석의 비밀번호=값·is ""값""·root / 값 형태 정규식 (숫자·특수문자 또는 따옴표 값만) → warn"
+2-14,보안기능,솔트 없이 일방향 해쉬 함수 사용,CWE-759,,제외,,"Semgrep 으로 판단할 수 없어 규칙을 두지 않음 — 수동 점검. 해시 대상이 비밀번호인지, 솔트가 다른 곳에서 붙는지 이름으로만 추정할 수 있음"
+2-15,보안기능,무결성 검사 없는 코드 다운로드,CWE-494,,제외,,Semgrep 으로 판단할 수 없어 규칙을 두지 않음 — 수동 점검. 다운로드한 코드의 무결성 검사가 다른 함수에 있는지 판단할 수 없음
+2-16,보안기능,반복된 인증시도 제한 기능 부재,CWE-307,,제외,,Semgrep 으로 판단할 수 없어 규칙을 두지 않음 — 수동 점검. 인증 시도 제한은 보통 다른 계층(필터·라이브러리·게이트웨이)에 있어 판단할 수 없음
+3-1,시간 및 상태,경쟁조건: 검사 시점과 사용 시점(TOCTOU),CWE-367,java,점검보조,mois-3-01-toctou,File·Files 존재 검사 후 동기화 없이 열기·삭제. 실제 다중 스레드 접근 여부는 수동 확인
+3-2,시간 및 상태,종료되지 않는 반복문 또는 재귀 함수,CWE-674; CWE-835,java,부분,mois-3-02-infinite-loop-recursion,탈출문 없는 while(true)·for(;;)와 제어문 없는 자기 호출(인자 0~3개·같은 타입). 간접 재귀 미탐
+4-1,에러처리,오류 메시지 정보노출,CWE-209,java,점검보조,mois-4-01-error-message-exposure,printStackTrace와 잡은 예외의 콘솔·응답·모델 출력. 출력 내용의 민감도는 수동 판단(가이드 진단방법)
+4-2,에러처리,오류상황 대응 부재,CWE-390,java,부분,mois-4-02-empty-catch,빈 catch 블록 → warn
+4-3,에러처리,부적절한 예외 처리,CWE-754,java,부분,mois-4-03-improper-exception-handling,Exception·Throwable·RuntimeException catch와 File.delete 등 boolean 반환값 무시. 그 밖의 반환값 검사 미탐
+5-1,코드오류,Null Pointer 역참조,CWE-476,java,부분,mois-5-01-null-dereference,null 분기 안 사용·검사 순서 오류·요청 파라미터/헤더와 시스템 속성 미검사 사용. 함수 간 흐름 미탐
+5-2,코드오류,부적절한 자원 해제,CWE-404,java,부분,mois-5-02-resource-leak,파일·NIO 스트림과 DriverManager 연결을 지역 변수로 열고 finally/try-with-resources 로 닫지 않음. JDBC Statement·ResultSet 미포함
+5-3,코드오류,해제된 자원 사용,CWE-416,,해당 없음,,C 메모리(free 후 사용) 항목. Java 는 GC 가 메모리를 해제해 해당 없음
+5-4,코드오류,초기화되지 않은 변수 사용,CWE-457,,해당 없음,,C 스택 변수 항목. Java 컴파일러가 지역 변수 초기화를 강제해 해당 없음
+5-5,코드오류,신뢰할 수 없는 데이터의 역직렬화,CWE-502,java,부분,mois-5-05-insecure-deserialization; mois-5-05-unsafe-deserializer,"요청·업로드·소켓 입력의 역직렬화(block)와 필터 없는 역직렬화·Jackson 기본 타입(warn). 필터는 '목록 밖 클래스 거부'가 보이는 것만 인정(createFilter(""…;!*""), rejectUndecidedClass), XStream 은 NoTypePermission.NONE 으로 초기화한 뒤 리터럴 허용 목록만 더한 경우만 인정"
+6-1,캡슐화,잘못된 세션에 의한 데이터 정보 노출,CWE-488; CWE-543,java,부분,mois-6-01-shared-field-in-singleton,서블릿의 final 아닌 멤버 필드와 Spring 빈 필드를 요청 처리 메서드에서 변경. JSP 선언부 미포함
+6-2,캡슐화,제거되지 않고 남은 디버그 코드,CWE-489,java,점검보조,mois-6-02-debug-code,Spring Boot 시작 클래스 외 main()과 System.out/err 출력. 디버그 여부는 수동 확인
+6-3,캡슐화,Public 메소드부터 반환된 Private 배열,CWE-495,java,부분,mois-6-03-private-array-returned,private 배열 필드를 public 메서드가 그대로 반환. 얕은 복사·컬렉션 미탐
+6-4,캡슐화,Private 배열에 Public 데이터 할당,CWE-496,java,부분,mois-6-04-public-data-to-private-array,public 메서드 배열 인자를 private 배열 필드에 그대로 저장. 얕은 복사·생성자 미탐
+7-1,API 오용,DNS lookup에 의존한 보안결정,CWE-247,java,부분,mois-7-01-dns-security-decision,InetAddress 호스트 이름과 getRemoteHost 를 equals·endsWith 등으로 비교
+7-2,API 오용,취약한 API 사용,CWE-676; CWE-242; CWE-246; CWE-382,java,부분,mois-7-02-dangerous-api,main() 밖 System.exit·Runtime.exit/halt 와 서블릿·Spring 빈의 Socket 직접 사용. C 금지 함수는 대상 아님

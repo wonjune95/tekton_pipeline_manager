@@ -1,0 +1,93 @@
+rules:
+- id: mois-6-02-debug-code-py
+  languages: [python]
+  severity: WARNING
+  message: "[행안부 캡슐화] 제거되지 않고 남은 디버그 코드: 디버거 호출(pdb·breakpoint), print() 출력, 웹 모듈의 테스트용 __main__ 블록이 남아 있음 — 배포 전에 지우고 필요한 기록은 logging 으로 남길 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "캡슐화"
+    mois-item-no: "6-2"
+    mois-item: "제거되지 않고 남은 디버그 코드"
+    cwe: "CWE-489"
+    gate: warn
+  pattern-either:
+    # 디버거 (from pdb import set_trace 도 import pdb 패턴에 걸린다)
+    - pattern: import pdb
+    - pattern: import ipdb
+    - pattern: import pudb
+    - pattern: pdb.set_trace(...)
+    - pattern: ipdb.set_trace(...)
+    - pattern: pudb.set_trace(...)
+    - pattern: breakpoint(...)
+    # print() 출력 — 파일로 쓰는 print(file=f, sys.stdout·stderr 는 탐지), __main__ 블록 안, 잡은 예외 출력(4-1 오류 메시지 정보노출)은 제외
+    - patterns:
+        - pattern: print(...)
+        - pattern-not:
+            patterns:
+              - pattern: print(..., file=$OUT, ...)
+              - metavariable-regex:
+                  metavariable: $OUT
+                  regex: ^(?!sys\.(stdout|stderr)$).*
+        - pattern-not-inside: |
+            if __name__ == "__main__":
+                ...
+        # 웹 프레임워크를 쓰지 않는 명령행 스크립트(__main__ 블록이 있는 파일)의 print 는 정상 출력으로 본다
+        - pattern-not-inside:
+            patterns:
+              - pattern-regex: (?ms)\A.*^if __name__ == .__main__.:.*\z
+              - pattern-not-regex: (?ms)\A.*^(from|import)\s+(django|flask|fastapi|starlette|rest_framework)\b.*\z
+        - pattern-not:
+            patterns:
+              - pattern-either:
+                  - pattern-inside: |
+                      try:
+                          ...
+                      except $T as $E:
+                          ...
+                  - pattern-inside: |
+                      try:
+                          ...
+                      except $T as $E:
+                          ...
+                      else:
+                          ...
+                  - pattern-inside: |
+                      try:
+                          ...
+                      except $T as $E:
+                          ...
+                      finally:
+                          ...
+                  - pattern-inside: |
+                      try:
+                          ...
+                      except $T as $E:
+                          ...
+                      else:
+                          ...
+                      finally:
+                          ...
+              - pattern: print(..., <... $E ...>, ...)
+    # 웹 모듈(django·flask·fastapi 를 import 하는 파일)의 __main__ 블록 — 서버·관리 명령을 시작하는 블록은 제외
+    - patterns:
+        - pattern: |
+            if __name__ == "__main__":
+                ...
+        - pattern-inside:
+            pattern-regex: (?ms)\A.*^(from|import)\s+(django|flask|fastapi|starlette|rest_framework)\b.*\z
+        - pattern-not: |
+            if __name__ == "__main__":
+                ...
+                $APP.run(...)
+                ...
+        - pattern-not: |
+            if __name__ == "__main__":
+                ...
+                main(...)
+                ...
+        - pattern-not: |
+            if __name__ == "__main__":
+                ...
+                execute_from_command_line(...)
+                ...

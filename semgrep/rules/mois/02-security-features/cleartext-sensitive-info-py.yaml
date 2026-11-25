@@ -1,0 +1,76 @@
+rules:
+# 중요정보 평문 저장·전송: 비밀번호가 해시·암호화 없이 DB·파일·네트워크·응답으로 나감
+# source 는 Java 규칙(mois-2-05-cleartext-sensitive-info)처럼 "비밀번호로 보이는 이름의 값"이다.
+# 공통 source 블록(docs/python-source-block.yaml)은 모든 요청값이라 이 항목에는 맞지 않아 쓰지 않는다.
+- id: mois-2-05-cleartext-transport-py
+  languages: [python]
+  severity: WARNING
+  message: "[행안부 보안기능] 암호화되지 않은 중요정보: 암호화되지 않은 채널(http://·TLS 없는 SMTP·FTP·Telnet)로 연결함 — 중요정보를 주고받으면 https, SMTP_SSL·starttls(), FTP_TLS·SFTP, SSH 를 사용할 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "보안기능"
+    mois-item-no: "2-5"
+    mois-item: "암호화되지 않은 중요정보"
+    cwe: "CWE-319"
+    gate: warn
+  # starttls() 는 연결을 만든 문장과 같은 블록에서 조건 없이 부를 때만 인정한다 (if·try 안의 starttls() 는 안 불릴 수 있다)
+  options:
+    go_deeper_stmt: false
+  pattern-either:
+    # http:// 로 호출 (localhost 는 제외). URL 을 url= 키워드로 넘긴 것도 본다
+    - patterns:
+        - pattern-either:
+            - pattern: requests.$M("$U", ...)
+            - pattern: requests.request($METH, "$U", ...)
+            - pattern: httpx.$M("$U", ...)
+            - pattern: httpx.request($METH, "$U", ...)
+            - pattern: urllib.request.urlopen("$U", ...)
+            - pattern: urllib.request.Request("$U", ...)
+            - pattern: aiohttp.request($METH, "$U", ...)
+            - pattern: $M(..., base_url="$U", ...)        # httpx.Client(base_url=…), OpenAI(base_url=…) — $M 은 점이 붙은 이름에도 맞는다
+            - pattern: $S.get("$U", ...)
+            - pattern: $S.post("$U", ...)
+            - pattern: $S.put("$U", ...)
+            - pattern: $S.patch("$U", ...)
+            - pattern: $S.delete("$U", ...)
+            - patterns:
+                - pattern: $S.$HM(..., url="$U", ...)
+                - metavariable-regex:
+                    metavariable: $HM
+                    regex: ^(get|post|put|patch|delete|request|urlopen|Request)$
+        # 같은 호스트만 제외: localhost 뒤에는 포트(숫자)·경로·끝만 올 수 있다 (http://localhost:x@다른호스트/ 는 다른 호스트다)
+        - metavariable-regex:
+            metavariable: $U
+            regex: (?i)^http://(?!(localhost|127\.0\.0\.1|\[::1\])(:\d+)?([/?#]|$)).*
+    # TLS 없는 SMTP (starttls 호출이 없고 localhost 가 아님)
+    - patterns:
+        - pattern: smtplib.SMTP(...)
+        - pattern-not: smtplib.SMTP()
+        - pattern-not: smtplib.SMTP("localhost", ...)
+        - pattern-not: smtplib.SMTP("127.0.0.1", ...)
+        - pattern-not-inside: |
+            $S = smtplib.SMTP(...)
+            ...
+            $S.starttls(...)
+        # (끝에 ... 를 붙이면 go_deeper_stmt: false 여도 if·try 안의 starttls() 까지 찾아 들어간다 — 붙이지 않는다)
+        - pattern-not-inside: |
+            with smtplib.SMTP(...) as $S:
+              ...
+              $S.starttls(...)
+    # 로그인·발송한 뒤에 starttls() 를 부르면 계정·내용은 이미 평문으로 지나갔다 (뒤의 starttls() 가 if·try 안에 있어도 같다)
+    - patterns:
+        - pattern: $S.$SEND(...)
+        - metavariable-regex:
+            metavariable: $SEND
+            regex: ^(login|sendmail|send_message)$
+        - pattern-inside: |
+            $S.$SEND(...)
+            ...
+            $LATER
+        - metavariable-pattern:
+            metavariable: $LATER
+            pattern: $S.starttls(...)
+    # FTP·Telnet 은 계정과 내용이 평문으로 지나간다
+    - pattern: ftplib.FTP(...)
+    - pattern: telnetlib.Telnet(...)

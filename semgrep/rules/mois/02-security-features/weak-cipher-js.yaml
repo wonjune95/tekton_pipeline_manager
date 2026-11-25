@@ -1,0 +1,50 @@
+rules:
+- id: mois-2-04-weak-cipher-js
+  languages: [javascript, typescript]
+  severity: ERROR
+  message: "[행안부 보안기능] 취약한 암호화 알고리즘 사용: DES·3DES·RC4·RC2·Blowfish 등 취약한 알고리즘, ECB 모드, IV 없이 MD5 로 키를 만드는 crypto.createCipher — crypto.createCipheriv 로 AES(128비트 이상)·ARIA·SEED 를 GCM·CBC 등 안전한 운영 모드와 무작위 IV 로 사용할 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "보안기능"
+    mois-item-no: "2-4"
+    mois-item: "취약한 암호화 알고리즘 사용"
+    cwe: "CWE-327"
+    gate: block
+  # 참고: semgrep-rules javascript/node-crypto/security/create-de-cipher-no-iv.yaml
+  # 알고리즘 이름이 문자열 상수(같은 파일의 const 포함)일 때만 본다. 설정에서 읽어 오면 놓침
+  pattern-either:
+    # Node crypto: createCipher·createDecipher 는 IV 없이 MD5 1회로 키를 만든다 (Node 22 에서 제거됨).
+    # node-forge 의 forge.cipher.createCipher 는 다른 API 라 아래 가지에서 따로 본다
+    - patterns:
+        - pattern-either:
+            - pattern: $C.createCipher(...)
+            - pattern: $C.createDecipher(...)
+        - pattern-not: $F.cipher.createCipher(...)
+        - pattern-not: $F.cipher.createDecipher(...)
+    # Node crypto 의 취약 알고리즘·ECB 모드 (OpenSSL 이름: des-ede3-cbc, bf-cbc, rc4, aes-128-ecb …)
+    - patterns:
+        - pattern-either:
+            - pattern: $C.createCipheriv("$ALG", ...)
+            - pattern: $C.createDecipheriv("$ALG", ...)
+        - metavariable-regex:
+            metavariable: $ALG
+            regex: (?i)^((des|desx|des3|des-ede|des-ede3|bf|blowfish|rc2|rc4|rc5|cast|cast5|idea)([-_].*)?|.*-ecb)$
+    # node-forge: forge.cipher.createCipher('3DES-CBC', key), 'DES-ECB', 'AES-ECB', 'RC2'
+    - patterns:
+        - pattern-either:
+            - pattern: $F.cipher.createCipher("$ALG", ...)
+            - pattern: $F.cipher.createDecipher("$ALG", ...)
+        - metavariable-regex:
+            metavariable: $ALG
+            regex: (?i)^((des|3des|rc2)([-_].*)?|.*-ecb)$
+    # CryptoJS
+    - pattern: $CJ.DES.encrypt(...)
+    - pattern: $CJ.DES.decrypt(...)
+    - pattern: $CJ.TripleDES.encrypt(...)
+    - pattern: $CJ.TripleDES.decrypt(...)
+    - pattern: $CJ.RC4.encrypt(...)
+    - pattern: $CJ.RC4.decrypt(...)
+    - pattern: $CJ.RC4Drop.encrypt(...)
+    - pattern: $CJ.RC4Drop.decrypt(...)
+    - pattern: $CJ.mode.ECB

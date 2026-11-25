@@ -1,0 +1,63 @@
+rules:
+- id: mois-2-03-insecure-permission-py
+  languages: [python]
+  severity: WARNING
+  message: "[행안부 보안기능] 중요한 자원에 대한 잘못된 권한 설정: 모든 사용자에게 쓰기 권한을 주는 모드(0o777·0o666 등)나 umask 0 — 소유자 전용 최소 권한(파일 0o600·0o640, 디렉터리 0o700·0o750)으로 설정할 것 (대상이 설정·실행 파일 등 중요 자원인지 확인)"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "보안기능"
+    mois-item-no: "2-3"
+    mois-item: "중요한 자원에 대한 잘못된 권한 설정"
+    cwe: "CWE-732"
+    gate: warn
+  pattern-either:
+    # 다른 사용자(others)에게 쓰기 권한: 8진수 마지막 자리가 2·3·6·7 (0o777, 0o666, 0o646 …), 10진수 511·438
+    - patterns:
+        - pattern-either:
+            - pattern: os.chmod($P, $MODE, ...)
+            - pattern: os.chmod($P, mode=$MODE, ...)
+            - pattern: os.lchmod($P, $MODE)
+            - pattern: os.fchmod($FD, $MODE)
+            - pattern: $PATH.chmod($MODE)
+            - pattern: os.open($P, $FLAGS, $MODE, ...)
+            - pattern: os.open($P, $FLAGS, mode=$MODE, ...)
+            - pattern: os.mkdir($P, $MODE, ...)
+            - pattern: os.makedirs($P, $MODE, ...)
+            - pattern: os.makedirs($P, mode=$MODE, ...)
+            - pattern: $PATH.mkdir(..., mode=$MODE, ...)      # Path(...).mkdir(mode=…) 와 os.mkdir(p, mode=…) 둘 다
+            - pattern: os.mkfifo($P, $MODE, ...)
+        - metavariable-regex:
+            metavariable: $MODE
+            regex: ^(0[oO]?[0-7]*[2367]|511|438)$
+    # stat 상수로 others 쓰기 권한. 비트를 지우는 식(mode & ~stat.S_IWOTH)은 제외
+    - patterns:
+        - pattern-either:
+            - pattern: os.chmod($P, <... stat.S_IWOTH ...>, ...)
+            - pattern: os.chmod($P, <... stat.S_IRWXO ...>, ...)
+            - pattern: $PATH.chmod(<... stat.S_IWOTH ...>)
+            - pattern: $PATH.chmod(<... stat.S_IRWXO ...>)
+        - pattern-not: os.chmod($P, <... ~<... stat.S_IWOTH ...> ...>, ...)
+        - pattern-not: os.chmod($P, <... ~<... stat.S_IRWXO ...> ...>, ...)
+        - pattern-not: $PATH.chmod(<... ~<... stat.S_IWOTH ...> ...>)
+        - pattern-not: $PATH.chmod(<... ~<... stat.S_IRWXO ...> ...>)
+    # umask 0 → 이후 만드는 파일이 모두에게 열림
+    - patterns:
+        - pattern: os.umask($M)
+        - metavariable-regex:
+            metavariable: $M
+            regex: ^0[oO]?0*$
+    # 셸 명령으로 chmod 777·666·o+w, umask 0. 명령이 문자열 리터럴로 시작하면 본다 ("chmod 777 " + path, f"chmod 777 {path}" 포함)
+    - patterns:
+        - pattern-either:
+            - pattern: os.system($CMD)
+            - pattern: os.popen($CMD, ...)
+            - pattern: subprocess.$FN($CMD, ...)
+        - metavariable-regex:
+            metavariable: $CMD
+            regex: (?i)^[a-z]{0,2}["']{1,3}\s*(sudo\s+)?(umask\s+0+\b|chmod\s+(-\w+\s+)*0?[0-7]?[0-7][2367]\b|chmod\s+(-\w+\s+)*[ugoa]*[oa][ugoa]*\+[rxXst]*w).*
+    - patterns:
+        - pattern: subprocess.$FN(["chmod", ..., "$PERM", ...], ...)
+        - metavariable-regex:
+            metavariable: $PERM
+            regex: ^(0?[0-7]?[0-7][2367]|[ugoa]*[oa][ugoa]*\+[rxXst]*w[rxXst]*)$

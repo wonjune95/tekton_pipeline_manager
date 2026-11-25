@@ -1,0 +1,54 @@
+rules:
+- id: mois-3-01-toctou-js
+  languages: [javascript, typescript]
+  severity: WARNING
+  message: "[행안부 시간 및 상태] 경쟁조건: 검사 시점과 사용 시점(TOCTOU): 파일 존재·권한을 검사(existsSync·accessSync·statSync·access·stat)한 뒤 같은 경로를 열기·쓰기·삭제·이름 변경함 — 검사 사이에 파일이 바뀔 수 있으니 검사 없이 바로 열고 오류(ENOENT·EEXIST)로 처리하거나, 'wx' 플래그·mkdirSync(..., { recursive: true }) 처럼 원자적으로 동작하는 호출을 쓸 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "시간 및 상태"
+    mois-item-no: "3-1"
+    mois-item: "경쟁조건: 검사 시점과 사용 시점(TOCTOU)"
+    cwe: "CWE-367"
+    gate: warn
+  patterns:
+    # 검사: `if (검사) …` 와 그 뒤에 오는 문장 전체를 본다. if 안에서 쓰는 경우, else 에서 쓰는 경우,
+    # if 로 먼저 빠져나간 뒤(if (!existsSync(p)) return;) 아래에서 쓰는 경우가 모두 여기에 맞는다
+    - pattern-either:
+        # 동기 검사 — 이름이 fs 전용이라 수신 객체(fs·fs-extra·import 한 이름)를 가리지 않는다
+        - patterns:
+            - pattern-either:
+                - pattern-inside: |
+                    if (<... $FS.$CHECK($P, ...) ...>) $S
+                    ...
+                - pattern-inside: |
+                    if (<... $CHECK($P, ...) ...>) $S
+                    ...
+            - metavariable-regex:
+                metavariable: $CHECK
+                regex: ^(existsSync|accessSync|statSync|lstatSync)$
+        # 콜백 검사: fs.access(p, (err) => { … 같은 경로 사용 … }). 이름이 흔해서 fs 모듈(require·import 로 확인)만 본다
+        - patterns:
+            - pattern-either:
+                - pattern-inside: fs.$CHECK($P, ..., function (...) { ... })
+                - pattern-inside: fs.$CHECK($P, ..., (...) => { ... })
+            - metavariable-regex:
+                metavariable: $CHECK
+                regex: ^(access|exists|stat|lstat)$
+    # 사용: 같은 경로를 열기·읽기·쓰기·삭제·이름 변경·권한 변경
+    - pattern-either:
+        - patterns:
+            - pattern: $FS2.$USE($P, ...)
+            - metavariable-regex:
+                metavariable: $USE
+                regex: ^(open|openSync|readFile|readFileSync|writeFile|writeFileSync|appendFile|appendFileSync|unlink|unlinkSync|rm|rmSync|rmdir|rmdirSync|rename|renameSync|mkdir|mkdirSync|copyFile|copyFileSync|chmod|chmodSync|chown|chownSync|truncate|truncateSync|createReadStream|createWriteStream)$
+        # import { unlinkSync } from 'node:fs' 처럼 이름만 가져온 호출 (fs 전용 이름만)
+        - patterns:
+            - pattern: $USE($P, ...)
+            - metavariable-regex:
+                metavariable: $USE
+                regex: ^(openSync|readFileSync|writeFileSync|appendFileSync|unlinkSync|rmSync|rmdirSync|renameSync|mkdirSync|copyFileSync|chmodSync|chownSync|truncateSync|createReadStream|createWriteStream)$
+    # 이미 있어도 실패하지 않는 생성은 경쟁이 없다
+    - pattern-not: '$FS2.mkdirSync($P, {..., recursive: true, ...})'
+    - pattern-not: '$FS2.mkdir($P, {..., recursive: true, ...}, ...)'
+    - pattern-not: 'mkdirSync($P, {..., recursive: true, ...})'

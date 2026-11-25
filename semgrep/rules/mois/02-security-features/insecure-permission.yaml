@@ -1,0 +1,35 @@
+rules:
+- id: mois-2-03-insecure-permission
+  languages: [java]
+  severity: WARNING
+  message: "[행안부 보안기능] 중요한 자원에 대한 잘못된 권한 설정: 모든 사용자에게 읽기·쓰기·실행 권한을 줌 (대상이 설정·실행 파일 등 중요 자원인지 확인)"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "보안기능"
+    mois-item-no: "2-3"
+    mois-item: "중요한 자원에 대한 잘못된 권한 설정"
+    cwe: "CWE-732"
+    gate: warn
+  pattern-either:
+    # 두 번째 인자 false = 소유자만이 아니라 모든 사용자에게 권한
+    - patterns:
+        - pattern: $F.$SET(true, false)
+        - metavariable-regex:
+            metavariable: $SET
+            regex: ^(setReadable|setWritable|setExecutable)$
+    # rwxrwxrwx 처럼 다른 사용자(others)에게 쓰기 권한
+    - patterns:
+        - pattern: java.nio.file.attribute.PosixFilePermissions.fromString("$PERM")
+        - metavariable-regex:
+            metavariable: $PERM
+            regex: ^.{7}w.$
+    - pattern: java.nio.file.attribute.PosixFilePermission.OTHERS_WRITE
+    # umask 0, chmod 777·666, chmod o+w
+    - patterns:
+        - pattern-either:
+            - pattern: Runtime.getRuntime().exec("$CMD", ...)
+            - pattern: java.lang.Runtime.getRuntime().exec("$CMD", ...)
+        - metavariable-regex:
+            metavariable: $CMD
+            regex: (?i)^\s*(umask\s+0+\b|chmod\s+(-R\s+)?0?[0-7]?[0-7][2367]\b|chmod\s+(-R\s+)?[ao]\+[rx]*w)

@@ -1,0 +1,42 @@
+rules:
+- id: mois-1-08-xxe-py
+  languages: [python]
+  severity: WARNING
+  message: "[행안부 입력데이터 검증 및 표현] 부적절한 XML 외부개체 참조(설정 점검): 외부 엔티티를 막지 않은 XML 파서 설정 — lxml 파서를 resolve_entities=False 없이 만들었거나, 파서를 지정하지 않고 문서를 읽었거나, xml.sax 의 외부 엔티티 기능을 켰다. 읽는 문서가 외부 입력인지는 확인하지 않으므로, 신뢰할 수 없는 XML 을 읽는 곳이면 XMLParser(resolve_entities=False, no_network=True) 를 지정하거나 defusedxml 을 쓸 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "입력데이터 검증 및 표현"
+    mois-item-no: "1-8"
+    mois-item: "부적절한 XML 외부개체 참조"
+    cwe: "CWE-611"
+    gate: warn
+  # 설정 점검 규칙이다: 입력의 흐름은 보지 않고, 파서를 만드는 곳과 파서 없이 읽는 곳의 설정만 본다.
+  #   - 파서는 만든 곳에서 판정한다(쓰이지 않는 파서도 표시된다). 같은 함수에 안전한 파서가 따로 있어도 안전하지 않은 파서는 표시된다.
+  #   - 파서를 인자로 넘겨 읽는 호출(fromstring(data, parser))은 표시하지 않는다 — 그 파서를 만든 곳에서 본다.
+  # KISA Python 시큐어코딩 가이드의 안전한 예(lxml resolve_entities=False, sax feature_external_ges False)를 기준으로 한다.
+  # lxml 5.0 부터 기본값이 resolve_entities='internal'(외부 파일·URL 은 읽지 않음)로 바뀌었지만, 버전을 알 수 없으므로 명시하지 않으면 표시한다.
+  # 표준 라이브러리 xml.etree·xml.dom.minidom 과 Python 3.7.1 이후의 xml.sax 기본값은 외부 엔티티를 읽지 않으므로 대상이 아니다.
+  pattern-either:
+    # lxml: resolve_entities=False 없이 만든 파서
+    - patterns:
+        - pattern-either:
+            - pattern: lxml.etree.XMLParser(...)
+            - pattern: lxml.etree.iterparse(...)
+            - pattern: lxml.etree.XMLPullParser(...)
+        - pattern-not: lxml.etree.$P(..., resolve_entities=False, ...)
+    # lxml: 파서를 지정하지 않고(기본 파서) 문서를 읽음. 고정 문자열·고정 파일명은 제외
+    - patterns:
+        - pattern-either:
+            - pattern: lxml.etree.fromstring($SRC, ...)
+            - pattern: lxml.etree.XML($SRC, ...)
+            - pattern: lxml.etree.parse($SRC, ...)
+            - pattern: lxml.objectify.fromstring($SRC, ...)
+            - pattern: lxml.objectify.parse($SRC, ...)
+        - pattern-not: lxml.$M.$FN($SRC, $PARSER, ...)
+        - pattern-not: lxml.$M.$FN(..., parser=$PARSER, ...)
+        - pattern-not: lxml.$M.$FN("...", ...)
+    # xml.sax·pulldom: 외부 엔티티 처리를 명시적으로 켬
+    - pattern: $PARSER.setFeature(xml.sax.handler.feature_external_ges, True)
+    - pattern: $PARSER.setFeature(xml.sax.handler.feature_external_pes, True)
+    - pattern: xmltodict.parse(..., disable_entities=False, ...)

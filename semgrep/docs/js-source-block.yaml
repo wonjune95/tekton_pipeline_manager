@@ -1,0 +1,115 @@
+# JavaScript·TypeScript taint 규칙이 공통으로 쓰는 source 블록. 규칙 파일마다 pattern-sources 아래에 그대로 복사한다
+# (Semgrep 은 규칙 파일 사이에 YAML 앵커를 공유하지 못한다). 고치면 모든 *-js taint 규칙에 같이 반영할 것.
+# 규칙의 languages 는 [javascript, typescript] — .js·.jsx·.mjs·.cjs·.ts·.tsx 를 모두 본다.
+#
+# (A) 서버 요청 값: Express·Fastify·Next.js API 의 req·request (query·body·params·cookies·headers·…, get()·header()·param()),
+#     Koa 의 ctx (ctx.query·ctx.params·ctx.request.body·ctx.headers·ctx.cookies.get()), 업로드 파일 이름
+# (B) NestJS 컨트롤러 매개변수: @Query·@Body·@Param·@Headers·@Req 가 붙은 매개변수 (ParseIntPipe 등 숫자 변환 파이프는 제외)
+# (C) 브라우저 입력: location·document.URL·document.referrer·window.name, postMessage 의 event.data,
+#     React Router useParams()·useSearchParams()·useLocation(), Next.js useRouter().query·useSearchParams(), Angular route.snapshot.queryParams 등
+pattern-sources:
+  # (A) 서버 요청 값 (정규식은 가지마다 따로 건다 — 한 묶음에서 일부 가지에만 있는 메타변수에 걸면 나머지 가지가 무효가 된다)
+  - patterns:
+      - pattern: $REQ.$ATTR
+      - metavariable-regex:
+          metavariable: $REQ
+          regex: ^(req|request)$
+      - metavariable-regex:
+          metavariable: $ATTR
+          regex: ^(query|body|params|cookies|signedCookies|headers|originalUrl|url|path|hostname|files|file)$
+  - patterns:
+      - pattern: $REQ.$GET(...)
+      - metavariable-regex:
+          metavariable: $REQ
+          regex: ^(req|request)$
+      - metavariable-regex:
+          metavariable: $GET
+          regex: ^(get|header|param)$
+  - pattern: ctx.query
+  - pattern: ctx.params
+  - pattern: ctx.headers
+  - pattern: ctx.cookies.get(...)
+  - patterns:
+      - pattern: ctx.request.$ATTR
+      - metavariable-regex:
+          metavariable: $ATTR
+          regex: ^(query|body|headers|files|url|path)$
+  # (A-2) 요청 객체를 구조분해한 핸들러 매개변수: ({ params, query, body }: Request, res) => …  (두 번째 매개변수가 res·response·reply 일 때만)
+  - patterns:
+      - pattern-either:
+          - pattern-inside: |
+              ({..., $K, ...}, $RES, ...) => { ... }
+          - pattern-inside: |
+              ({..., $K, ...}: $T, $RES, ...) => { ... }
+          - pattern-inside: |
+              function ({..., $K, ...}, $RES, ...) { ... }
+          - pattern-inside: |
+              function $FN({..., $K, ...}, $RES, ...) { ... }
+      - metavariable-regex:
+          metavariable: $K
+          regex: ^(query|body|params|cookies|headers|files|file)$
+      - metavariable-regex:
+          metavariable: $RES
+          regex: ^(res|response|reply)$
+      - pattern: $K
+  # (B) NestJS 컨트롤러 매개변수 (숫자 변환 파이프 ParseIntPipe·ParseFloatPipe·ParseBoolPipe·ParseUUIDPipe 를 준 것은 제외)
+  - patterns:
+      - pattern-either:
+          - pattern-inside: |
+              $M(..., @$D(...) $P, ...) { ... }
+          - pattern-inside: |
+              $M(..., @$D(...) $P: $T, ...) { ... }
+          - pattern-inside: |
+              async $M(..., @$D(...) $P, ...) { ... }
+          - pattern-inside: |
+              async $M(..., @$D(...) $P: $T, ...) { ... }
+      - metavariable-regex:
+          metavariable: $D
+          regex: ^(Query|Body|Param|Headers|Req|Request)$
+      - pattern-not-inside:
+          patterns:
+            - pattern-either:
+                - pattern-inside: |
+                    $M(..., @$D(..., $PIPE, ...) $P: $T, ...) { ... }
+                - pattern-inside: |
+                    async $M(..., @$D(..., $PIPE, ...) $P: $T, ...) { ... }
+                - pattern-inside: |
+                    $M(..., @$D(..., new $PIPE(...), ...) $P: $T, ...) { ... }
+                - pattern-inside: |
+                    async $M(..., @$D(..., new $PIPE(...), ...) $P: $T, ...) { ... }
+            - metavariable-regex:
+                metavariable: $PIPE
+                regex: ^Parse(Int|Float|Bool|UUID|Enum)Pipe$
+      - focus-metavariable: $P
+  # (C) 브라우저 입력
+  - patterns:
+      - pattern-either:
+          - pattern: location.$LOC
+          - pattern: window.location.$LOC
+          - pattern: document.location.$LOC
+      - metavariable-regex:
+          metavariable: $LOC
+          regex: ^(href|search|hash|pathname)$
+  - pattern: document.URL
+  - pattern: document.documentURI
+  - pattern: document.referrer
+  - pattern: window.name
+  - patterns:
+      - pattern-inside: |
+          $W.addEventListener("message", ($E) => { ... })
+      - pattern: $E.data
+  # Angular ActivatedRoute: this.route.snapshot.queryParams.q · .params · .paramMap.get(...) · .fragment
+  - patterns:
+      - pattern: $R.snapshot.$P
+      - metavariable-regex:
+          metavariable: $P
+          regex: ^(queryParams|params|queryParamMap|paramMap|fragment)$
+  - pattern: useParams()
+  - pattern: useSearchParams()
+  - pattern: useLocation()
+  - pattern: useRouter().query
+  - patterns:
+      - pattern-inside: |
+          $R = useRouter();
+          ...
+      - pattern: $R.query

@@ -1,0 +1,75 @@
+rules:
+- id: mois-2-07-insufficient-key-length-py
+  languages: [python]
+  severity: ERROR
+  message: "[행안부 보안기능] 충분하지 않은 키 길이 사용: RSA·DSA·DH 2048비트, ECC 256비트, 대칭키 128비트 미만 — RSA·DSA 는 2048비트 이상, 타원곡선은 P-256 이상, AES 는 128비트(16바이트) 이상 키를 사용할 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "보안기능"
+    mois-item-no: "2-7"
+    mois-item: "충분하지 않은 키 길이 사용"
+    cwe: "CWE-326"
+    gate: block
+  pattern-either:
+    # 공개키 (진단가이드: RSA·DSA 2,048비트 이상)
+    - patterns:
+        - pattern-either:
+            - pattern: cryptography.hazmat.primitives.asymmetric.rsa.generate_private_key(..., key_size=$N, ...)
+            - pattern: cryptography.hazmat.primitives.asymmetric.rsa.generate_private_key($E, $N, ...)
+            - pattern: cryptography.hazmat.primitives.asymmetric.dsa.generate_private_key(..., key_size=$N, ...)
+            - pattern: cryptography.hazmat.primitives.asymmetric.dsa.generate_private_key($N, ...)
+            - pattern: cryptography.hazmat.primitives.asymmetric.dsa.generate_parameters(..., key_size=$N, ...)
+            - pattern: cryptography.hazmat.primitives.asymmetric.dsa.generate_parameters($N, ...)
+            - pattern: cryptography.hazmat.primitives.asymmetric.dh.generate_parameters(..., key_size=$N, ...)
+            - pattern: Crypto.PublicKey.RSA.generate($N, ...)
+            - pattern: Crypto.PublicKey.RSA.generate(..., bits=$N, ...)
+            - pattern: Crypto.PublicKey.DSA.generate($N, ...)
+            - pattern: Crypto.PublicKey.DSA.generate(..., bits=$N, ...)
+            - pattern: Cryptodome.PublicKey.RSA.generate($N, ...)
+            - pattern: Cryptodome.PublicKey.RSA.generate(..., bits=$N, ...)
+            - pattern: Cryptodome.PublicKey.DSA.generate($N, ...)
+            - pattern: Cryptodome.PublicKey.DSA.generate(..., bits=$N, ...)
+            - pattern: $K.generate_key(OpenSSL.crypto.TYPE_RSA, $N)
+            - pattern: $K.generate_key(OpenSSL.crypto.TYPE_DSA, $N)
+            - pattern: paramiko.RSAKey.generate($N, ...)
+            - pattern: paramiko.RSAKey.generate(..., bits=$N, ...)
+        - metavariable-comparison:
+            metavariable: $N
+            comparison: $N < 2048
+    # ECC (진단가이드: 256 이상) — 192·224·163·233비트 곡선
+    - pattern: cryptography.hazmat.primitives.asymmetric.ec.SECP192R1(...)
+    - pattern: cryptography.hazmat.primitives.asymmetric.ec.SECP224R1(...)
+    - pattern: cryptography.hazmat.primitives.asymmetric.ec.SECT163K1(...)
+    - pattern: cryptography.hazmat.primitives.asymmetric.ec.SECT163R2(...)
+    - pattern: cryptography.hazmat.primitives.asymmetric.ec.SECT233K1(...)
+    - pattern: cryptography.hazmat.primitives.asymmetric.ec.SECT233R1(...)
+    - patterns:
+        - pattern-either:
+            - pattern: Crypto.PublicKey.ECC.generate(..., curve="$CURVE", ...)
+            - pattern: Cryptodome.PublicKey.ECC.generate(..., curve="$CURVE", ...)
+        - metavariable-regex:
+            metavariable: $CURVE
+            regex: (?i)^.*(192|224).*$
+    # 키로 쓰는 난수 바이트가 16바이트(128비트) 미만. 변수 이름에 key 가 있을 때만
+    - patterns:
+        - pattern-either:
+            - pattern: $KEY = os.urandom($N)
+            - pattern: $KEY = secrets.token_bytes($N)
+            - pattern: $KEY = Crypto.Random.get_random_bytes($N)
+            - pattern: $KEY = Cryptodome.Random.get_random_bytes($N)
+        - metavariable-regex:
+            metavariable: $KEY
+            regex: (?i)^.*key.*$
+        - metavariable-comparison:
+            metavariable: $N
+            comparison: $N < 16
+    # 키 유도 길이가 16바이트 미만
+    - patterns:
+        - pattern-either:
+            - pattern: hashlib.pbkdf2_hmac(..., dklen=$N, ...)
+            - pattern: hashlib.pbkdf2_hmac($H, $PW, $SALT, $ITER, $N)
+            - pattern: hashlib.scrypt(..., dklen=$N, ...)
+        - metavariable-comparison:
+            metavariable: $N
+            comparison: $N < 16

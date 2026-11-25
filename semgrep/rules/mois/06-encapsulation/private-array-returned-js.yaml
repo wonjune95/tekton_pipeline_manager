@@ -1,0 +1,63 @@
+rules:
+- id: mois-6-03-private-array-returned-js
+  languages: [javascript, typescript]
+  severity: WARNING
+  message: "[행안부 캡슐화] Public 메소드부터 반환된 Private 배열: 비공개 필드(TS private·JS #필드)에 담긴 배열·Map·Set 을 공개 메서드가 그대로 반환함 — 외부에서 내용을 바꿀 수 있으니 복사본([...this.items]·new Map(this.map))이나 읽기 전용 형태(ReadonlyArray·Object.freeze 한 복사본)를 반환할 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "캡슐화"
+    mois-item-no: "6-3"
+    mois-item: "Public 메소드부터 반환된 Private 배열"
+    cwe: "CWE-495"
+    gate: warn
+  patterns:
+    # 비공개 필드(TS private, JS #필드)가 배열·Map·Set 으로 선언된 클래스
+    - pattern-either:
+        - patterns:
+            - pattern-either:
+                - pattern-inside: |
+                    class $C { ... private $F: $T = $INIT; ... }
+                - pattern-inside: |
+                    class $C { ... private $F = $INIT; ... }
+                - patterns:
+                    - pattern-inside: |
+                        class $C { ... $F = $INIT; ... }
+                    - metavariable-regex:
+                        metavariable: $F
+                        regex: ^#
+            - metavariable-pattern:
+                metavariable: $INIT
+                pattern-either:
+                  - pattern: "[...]"
+                  - pattern: new Array(...)
+                  - pattern: Array(...)
+                  - pattern: Array.from(...)
+                  - pattern: Array.of(...)
+                  - pattern: new Map(...)
+                  - pattern: new Set(...)
+        # 초기값 없이 배열 타입으로만 선언: private items: string[]; (생성자에서 채움)
+        - patterns:
+            - pattern-either:
+                - pattern-inside: |
+                    class $C { ... private $F: $T; ... }
+                - patterns:
+                    - pattern-inside: |
+                        class $C { ... $F: $T; ... }
+                    - metavariable-regex:
+                        metavariable: $F
+                        regex: ^#
+            - metavariable-regex:
+                metavariable: $T
+                regex: ^(.*\[\]|Array<.*>|Map<.*>|Set<.*>)$
+    # 공개 메서드(private·protected·#메서드가 아닌 것, getter 포함)
+    - pattern-inside: |
+        $M(...) { ... }
+    - pattern-not-inside: |
+        private $M(...) { ... }
+    - pattern-not-inside: |
+        protected $M(...) { ... }
+    - metavariable-regex:
+        metavariable: $M
+        regex: ^[^#]
+    - pattern: return this.$F;

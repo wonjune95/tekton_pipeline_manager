@@ -1,0 +1,54 @@
+rules:
+- id: mois-7-01-dns-security-decision
+  languages: [java]
+  severity: WARNING
+  message: "[행안부 API 오용] DNS lookup에 의존한 보안결정: DNS 조회로 얻은 호스트 이름으로 신뢰 여부를 판단함 — DNS 는 위조될 수 있으니 IP 주소 등 위조하기 어려운 값으로 판단할 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "API 오용"
+    mois-item-no: "7-1"
+    mois-item: "DNS lookup에 의존한 보안결정"
+    cwe: "CWE-247"
+    gate: warn
+  patterns:
+    - pattern-either:
+        # (가) 호스트 이름을 바로 비교: host.equals("...")·host.endsWith("...")
+        - patterns:
+            - pattern: $HOST.$CMP(...)
+            - metavariable-regex:
+                metavariable: $CMP
+                regex: ^(equals|equalsIgnoreCase|endsWith|startsWith|contains|matches)$
+        # (나) 호스트 이름을 변수에 담아 비교
+        - patterns:
+            - pattern-inside: |
+                $NAME = $HOST;
+                ...
+            - pattern: $NAME.$CMP(...)
+            - metavariable-regex:
+                metavariable: $CMP
+                regex: ^(equals|equalsIgnoreCase|endsWith|startsWith|contains|matches)$
+        # (다) 상수·허용 목록 쪽에서 비교: "trusted.example".equals(host)·ALLOWED.contains(host)
+        - patterns:
+            - pattern: $OTHER.$RCMP($HOST)
+            - metavariable-regex:
+                metavariable: $RCMP
+                regex: ^(equals|equalsIgnoreCase|contains|containsKey)$
+        - patterns:
+            - pattern-inside: |
+                $NAME = $HOST;
+                ...
+            - pattern: $OTHER.$RCMP($NAME)
+            - metavariable-regex:
+                metavariable: $RCMP
+                regex: ^(equals|equalsIgnoreCase|contains|containsKey)$
+    # DNS 조회로 얻은 호스트 이름
+    - metavariable-pattern:
+        metavariable: $HOST
+        pattern-either:
+          - pattern: (java.net.InetAddress $ADDR).getCanonicalHostName()
+          - pattern: (java.net.InetAddress $ADDR).getHostName()
+          - pattern: java.net.InetAddress.getByName(...).getCanonicalHostName()
+          - pattern: java.net.InetAddress.getByName(...).getHostName()
+          - pattern: (javax.servlet.http.HttpServletRequest $REQ).getRemoteHost()
+          - pattern: (jakarta.servlet.http.HttpServletRequest $REQ).getRemoteHost()

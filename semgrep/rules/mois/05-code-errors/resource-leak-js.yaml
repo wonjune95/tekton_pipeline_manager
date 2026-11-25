@@ -1,0 +1,157 @@
+rules:
+- id: mois-5-02-resource-leak-js
+  languages: [javascript, typescript]
+  severity: WARNING
+  message: "[행안부 코드오류] 부적절한 자원 해제: 파일 디스크립터(fs.openSync·fs.promises.open)나 DB 연결(mysql.createConnection)을 지역 변수로 열고 finally 에서 닫지 않음 — 오류가 나도 반드시 해제되도록 try/finally 에서 closeSync()·close()·end() 를 부를 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "코드오류"
+    mois-item-no: "5-2"
+    mois-item: "부적절한 자원 해제"
+    cwe: "CWE-404; CWE-772"
+    gate: warn
+  patterns:
+    # 함수 안에서 지역 변수로 연 파일 디스크립터·FileHandle·DB 연결
+    - pattern-either:
+        - pattern: $R = fs.openSync(...)
+        - pattern: $R = await fs.promises.open(...)
+        # fs.promises 를 담은 이름(import { promises as fsp } from 'fs', require('fs/promises'))
+        - patterns:
+            - pattern: $R = await $FSP.open(...)
+            - metavariable-regex:
+                metavariable: $FSP
+                regex: ^(fsp|fsPromises|promises)$
+        # mysql·mysql2 만 (같은 이름의 다른 API 를 빼기 위해 require·import 로 확인)
+        - patterns:
+            - pattern-either:
+                - pattern: $R = $MYSQL.createConnection(...)
+                - pattern: $R = await $MYSQL.createConnection(...)
+            - pattern-either:
+                - pattern-inside: |
+                    $MYSQL = require('$MOD');
+                    ...
+                - pattern-inside: |
+                    import $MYSQL from '$MOD';
+                    ...
+                - pattern-inside: |
+                    import * as $MYSQL from '$MOD';
+                    ...
+            - metavariable-regex:
+                metavariable: $MOD
+                regex: ^(mysql|mysql2|mysql2/promise)$
+    - pattern-either:
+        - pattern-inside: |
+            function $FN(...) { ... }
+        - pattern-inside: |
+            (...) => { ... }
+        - pattern-inside: |
+            $METHOD(...) { ... }
+    # finally 에서 닫음: try 안에서 열고 finally 에서 그 자원을 다룸(close()·end()·fs.closeSync(fd) 등)
+    - pattern-not-inside: |
+        try { ... } finally { ... <... $R ...>; ... }
+    - pattern-not-inside: |
+        try { ... } catch ($E) { ... } finally { ... <... $R ...>; ... }
+    # 열고 난 뒤의 try/finally 에서 닫음, 자원을 돌려주거나(감싼 객체로 돌려주는 것 포함) 필드에 담음(해제는 받는 쪽 몫).
+    # return fs.readSync(fd, …) 처럼 자원으로 만든 값만 돌려주는 것은 해제가 아니다.
+    # 여는 문장을 API 마다 적는 것은 `$R = $INIT; ...` 처럼 모든 대입에서 시작하는 패턴이 큰 파일(850KB)에서 시간 초과를 내기 때문이다
+    - pattern-not-inside: |
+        $R = fs.openSync(...);
+        ...
+        try { ... } finally { ... <... $R ...>; ... }
+    - pattern-not-inside: |
+        $R = fs.openSync(...);
+        ...
+        try { ... } catch ($E) { ... } finally { ... <... $R ...>; ... }
+    - pattern-not-inside: |
+        $R = fs.openSync(...);
+        ...
+        return $R;
+    - pattern-not-inside: |
+        $R = fs.openSync(...);
+        ...
+        return new $WRAP(..., $R, ...);
+    - pattern-not-inside: |
+        $R = fs.openSync(...);
+        ...
+        $OBJ.$FIELD = $R;
+    - pattern-not-inside: |
+        $R = await fs.promises.open(...);
+        ...
+        try { ... } finally { ... <... $R ...>; ... }
+    - pattern-not-inside: |
+        $R = await fs.promises.open(...);
+        ...
+        try { ... } catch ($E) { ... } finally { ... <... $R ...>; ... }
+    - pattern-not-inside: |
+        $R = await fs.promises.open(...);
+        ...
+        return $R;
+    - pattern-not-inside: |
+        $R = await fs.promises.open(...);
+        ...
+        return new $WRAP(..., $R, ...);
+    - pattern-not-inside: |
+        $R = await fs.promises.open(...);
+        ...
+        $OBJ.$FIELD = $R;
+    - pattern-not-inside: |
+        $R = await $FSP.open(...);
+        ...
+        try { ... } finally { ... <... $R ...>; ... }
+    - pattern-not-inside: |
+        $R = await $FSP.open(...);
+        ...
+        try { ... } catch ($E) { ... } finally { ... <... $R ...>; ... }
+    - pattern-not-inside: |
+        $R = await $FSP.open(...);
+        ...
+        return $R;
+    - pattern-not-inside: |
+        $R = await $FSP.open(...);
+        ...
+        return new $WRAP(..., $R, ...);
+    - pattern-not-inside: |
+        $R = await $FSP.open(...);
+        ...
+        $OBJ.$FIELD = $R;
+    - pattern-not-inside: |
+        $R = $MYSQL.createConnection(...);
+        ...
+        try { ... } finally { ... <... $R ...>; ... }
+    - pattern-not-inside: |
+        $R = $MYSQL.createConnection(...);
+        ...
+        try { ... } catch ($E) { ... } finally { ... <... $R ...>; ... }
+    - pattern-not-inside: |
+        $R = $MYSQL.createConnection(...);
+        ...
+        return $R;
+    - pattern-not-inside: |
+        $R = $MYSQL.createConnection(...);
+        ...
+        return new $WRAP(..., $R, ...);
+    - pattern-not-inside: |
+        $R = $MYSQL.createConnection(...);
+        ...
+        $OBJ.$FIELD = $R;
+    - pattern-not-inside: |
+        $R = await $MYSQL.createConnection(...);
+        ...
+        try { ... } finally { ... <... $R ...>; ... }
+    - pattern-not-inside: |
+        $R = await $MYSQL.createConnection(...);
+        ...
+        try { ... } catch ($E) { ... } finally { ... <... $R ...>; ... }
+    - pattern-not-inside: |
+        $R = await $MYSQL.createConnection(...);
+        ...
+        return $R;
+    - pattern-not-inside: |
+        $R = await $MYSQL.createConnection(...);
+        ...
+        return new $WRAP(..., $R, ...);
+    - pattern-not-inside: |
+        $R = await $MYSQL.createConnection(...);
+        ...
+        $OBJ.$FIELD = $R;

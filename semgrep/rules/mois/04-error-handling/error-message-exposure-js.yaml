@@ -1,0 +1,59 @@
+rules:
+- id: mois-4-01-error-message-exposure-js
+  languages: [javascript, typescript]
+  severity: WARNING
+  message: "[행안부 에러처리] 오류 메시지 정보노출: 잡은 오류 객체(스택·메시지)를 HTTP 응답으로 내보내거나, 스택 트레이스를 출력(console.trace)하거나, 상세 오류 화면(errorhandler)을 조건 없이 켬 — 사용자에게는 정해진 오류 코드·문구만 주고 상세 내용은 서버 로그로 남기며, errorhandler 는 개발 환경에서만 쓸 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "에러처리"
+    mois-item-no: "4-1"
+    mois-item: "오류 메시지 정보노출"
+    cwe: "CWE-209; CWE-497"
+    gate: warn
+  pattern-either:
+    # 스택 트레이스 출력
+    - pattern: console.trace(...)
+    # 잡은 오류를 응답으로 내보냄 — 오류를 받는 자리: catch (e), .catch((e) => …), Express 오류 처리 미들웨어(err, req, res, next),
+    # 오류 우선 콜백에서 오류가 있을 때(function (err, …) { if (err) … } — 매개변수 이름이 err·error·e 등일 때만)
+    - patterns:
+        - pattern-either:
+            - pattern-inside: |
+                try { ... } catch ($E) { ... }
+            - pattern-inside: |
+                try { ... } catch ($E) { ... } finally { ... }
+            - pattern-inside: $P.catch(($E) => $BODY)
+            - pattern-inside: $P.catch(function ($E) { ... })
+            - pattern-inside: |
+                function $H($E, $REQ, $RES, $NEXT) { ... }
+            - pattern-inside: |
+                ($E, $REQ, $RES, $NEXT) => { ... }
+            - patterns:
+                - pattern-either:
+                    - pattern-inside: |
+                        function $H($E, ...) { ... }
+                    - pattern-inside: |
+                        ($E, ...) => { ... }
+                - pattern-inside: if ($E) $S
+                # 첫 매개변수가 오류인지는 구조로 알 수 없어(.then((user) => { if (user) res.json(user) }) 와 모양이 같다) 이름으로 가린다
+                - metavariable-regex:
+                    metavariable: $E
+                    regex: ^(e|err|error|ex|exc|exception)$
+        - pattern-either:
+            - patterns:
+                - pattern-either:
+                    - pattern: $RES.$SEND(..., <... $E ...>, ...)
+                    - pattern: $RES.status(...).$SEND(..., <... $E ...>, ...)
+                - metavariable-regex:
+                    metavariable: $SEND
+                    regex: ^(send|json|jsonp|end)$
+            - pattern: $RES.render($VIEW, <... $E ...>, ...)
+            # Koa
+            - pattern: $CTX.body = <... $E ...>
+    # Express 오류 처리 미들웨어 errorhandler: 스택 트레이스를 HTML 로 보여 준다. NODE_ENV 가 development 일 때만 켜면 제외
+    - patterns:
+        - pattern-either:
+            - pattern: $APP.use(errorhandler(...))
+            - pattern: $APP.use(require('errorhandler')(...))
+        - pattern-not-inside: if (<... 'development' ...>) $S
+        - pattern-not-inside: if (<... "development" ...>) $S

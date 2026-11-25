@@ -1,0 +1,25 @@
+rules:
+- id: mois-6-03-private-array-returned
+  languages: [java]
+  severity: WARNING
+  message: "[행안부 캡슐화] Public 메소드부터 반환된 Private 배열: private 배열 필드의 참조를 public 메서드가 그대로 반환함 — 외부에서 배열을 바꿀 수 있으니 복사본(clone·Arrays.copyOf)을 반환할 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "캡슐화"
+    mois-item-no: "6-3"
+    mois-item: "Public 메소드부터 반환된 Private 배열"
+    cwe: "CWE-495"
+    gate: warn
+  patterns:
+    - pattern-either:
+        - pattern-inside: |
+            class $C { ... private $T[] $F; ... }
+        - pattern-inside: |
+            class $C { ... private $T[] $F = $I; ... }
+    - pattern-either:
+        - pattern: |
+            public $T[] $M(...) { ... return $F; }
+        - pattern: |
+            public $T[] $M(...) { ... return this.$F; }
+    # 필드와 이름이 같은 지역 배열(복사본)을 반환하는 경우(진단가이드 안전한 코드)는 Semgrep 이 다른 변수로 구분하므로 따로 빼지 않아도 된다

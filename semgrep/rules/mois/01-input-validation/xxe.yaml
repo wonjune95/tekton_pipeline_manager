@@ -1,0 +1,139 @@
+rules:
+- id: mois-1-08-xxe
+  languages: [java]
+  severity: WARNING
+  message: "[행안부 입력데이터 검증 및 표현] 부적절한 XML 외부개체 참조: DTD·외부 엔티티를 막지 않은 XML 파서를 사용함 — disallow-doctype-decl 을 켜거나 ACCESS_EXTERNAL_DTD/SCHEMA 를 빈 값으로 지정할 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "입력데이터 검증 및 표현"
+    mois-item-no: "1-8"
+    mois-item: "부적절한 XML 외부개체 참조"
+    cwe: "CWE-611"
+    gate: warn
+  # 같은 메서드 안에서 파서 팩토리를 만들어 파서를 얻는데, **그 팩토리에** 파서를 얻기 **전에** 제한 설정을 하지 않았으면 탐지.
+  # 같은 메서드의 다른 팩토리에 한 설정, 파서를 얻은 뒤의 설정, 조건문·try 안에서만 한 설정은 인정하지 않는다
+  # (docs/rule-conventions.md §2 "설정에 의한 제외"). FEATURE_SECURE_PROCESSING 은 구현체(Xerces 등)에 따라 외부 엔티티를
+  # 막지 못하므로 제외 사유로 보지 않는다. 팩토리를 다른 메서드·빈에서 만드는 경우는 보지 못한다.
+  pattern-either:
+    - patterns:
+        - pattern-either:
+            - patterns:
+                - pattern-inside: |
+                    $FAC = javax.xml.parsers.DocumentBuilderFactory.$NEW(...);
+                    ...
+                - pattern: $FAC.newDocumentBuilder()
+            - patterns:
+                - pattern-inside: |
+                    $FAC = javax.xml.parsers.SAXParserFactory.$NEW(...);
+                    ...
+                - pattern: $FAC.newSAXParser()
+            - patterns:
+                - pattern-inside: |
+                    $FAC = javax.xml.stream.XMLInputFactory.$NEW(...);
+                    ...
+                - pattern-either:
+                    - pattern: $FAC.createXMLStreamReader(...)
+                    - pattern: $FAC.createXMLEventReader(...)
+            - patterns:
+                - pattern-inside: |
+                    $FAC = javax.xml.transform.TransformerFactory.$NEW(...);
+                    ...
+                - pattern-either:
+                    - pattern: $FAC.newTransformer(...)
+                    - pattern: $FAC.newTemplates(...)
+            - patterns:
+                - pattern-inside: |
+                    $FAC = javax.xml.validation.SchemaFactory.$NEW(...);
+                    ...
+                - pattern: $FAC.newSchema(...)
+            - patterns:
+                - pattern-inside: |
+                    $FAC = new org.dom4j.io.SAXReader(...);
+                    ...
+                - pattern: $FAC.read(...)
+            - patterns:
+                - pattern-inside: |
+                    $FAC = org.xml.sax.helpers.XMLReaderFactory.createXMLReader(...);
+                    ...
+                - pattern: $FAC.parse(...)
+        # 제외: 같은 객체($FAC)에, 이 줄보다 앞에서 한 설정
+        - pattern-not-inside:
+            pattern-either:
+              # DOCTYPE 자체를 금지
+              - pattern: |
+                  $FAC.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+                  ...
+              # 일반 엔티티와 파라미터 엔티티를 둘 다 끔 (하나만 끄면 다른 쪽으로 외부 자원을 읽는다)
+              - pattern: |
+                  $FAC.setFeature("http://xml.org/sax/features/external-general-entities", false);
+                  ...
+                  $FAC.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+                  ...
+              - pattern: |
+                  $FAC.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+                  ...
+                  $FAC.setFeature("http://xml.org/sax/features/external-general-entities", false);
+                  ...
+              # JAXP 1.5: 외부 DTD·엔티티 접근 프로토콜을 비움 (setAttribute·setProperty)
+              - pattern: |
+                  $FAC.$SET(javax.xml.XMLConstants.ACCESS_EXTERNAL_DTD, "");
+                  ...
+              - pattern: |
+                  $FAC.$SET("http://javax.xml.XMLConstants/property/accessExternalDTD", "");
+                  ...
+              # StAX: DTD 지원을 끄거나 외부 엔티티를 끔
+              - patterns:
+                  - pattern-either:
+                      - pattern: |
+                          $FAC.setProperty(javax.xml.stream.XMLInputFactory.SUPPORT_DTD, $OFF);
+                          ...
+                      - pattern: |
+                          $FAC.setProperty("javax.xml.stream.supportDTD", $OFF);
+                          ...
+                      - pattern: |
+                          $FAC.setProperty(javax.xml.stream.XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, $OFF);
+                          ...
+                      - pattern: |
+                          $FAC.setProperty("javax.xml.stream.isSupportingExternalEntities", $OFF);
+                          ...
+                  - metavariable-regex:
+                      metavariable: $OFF
+                      regex: ^(false|Boolean\.FALSE)$
+        # 제외: 이 팩토리에서 얻은 SAXParser 에 바로 접근 제한을 건 경우
+        - pattern-not-inside:
+            patterns:
+              - pattern: $P = $FAC.newSAXParser();
+              - pattern-either:
+                  - pattern-inside: |
+                      $P = $FAC.newSAXParser();
+                      ...
+                      $P.setProperty(javax.xml.XMLConstants.ACCESS_EXTERNAL_DTD, "");
+                  - pattern-inside: |
+                      $P = $FAC.newSAXParser();
+                      ...
+                      $P.setProperty("http://javax.xml.XMLConstants/property/accessExternalDTD", "");
+    # 팩토리를 변수에 담지 않고 바로 파서를 얻으면 설정할 방법이 없다
+    - patterns:
+        - pattern-either:
+            - pattern: javax.xml.parsers.DocumentBuilderFactory.$NEW(...).newDocumentBuilder()
+            - pattern: javax.xml.parsers.SAXParserFactory.$NEW(...).newSAXParser()
+            - pattern: javax.xml.stream.XMLInputFactory.$NEW(...).createXMLStreamReader(...)
+            - pattern: javax.xml.stream.XMLInputFactory.$NEW(...).createXMLEventReader(...)
+            - pattern: javax.xml.transform.TransformerFactory.$NEW(...).newTransformer(...)
+            - pattern: javax.xml.transform.TransformerFactory.$NEW(...).newTemplates(...)
+            - pattern: javax.xml.validation.SchemaFactory.$NEW(...).newSchema(...)
+            - pattern: new org.dom4j.io.SAXReader(...).read(...)
+            - pattern: org.xml.sax.helpers.XMLReaderFactory.createXMLReader(...).parse(...)
+        - pattern-not-inside:
+            patterns:
+              - pattern: $P = javax.xml.parsers.SAXParserFactory.$NEW(...).newSAXParser();
+              - pattern-either:
+                  - pattern-inside: |
+                      $P = $INIT;
+                      ...
+                      $P.setProperty(javax.xml.XMLConstants.ACCESS_EXTERNAL_DTD, "");
+                  - pattern-inside: |
+                      $P = $INIT;
+                      ...
+                      $P.setProperty("http://javax.xml.XMLConstants/property/accessExternalDTD", "");

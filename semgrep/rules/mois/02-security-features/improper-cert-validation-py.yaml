@@ -1,0 +1,75 @@
+rules:
+- id: mois-2-11-improper-cert-validation-py
+  languages: [python]
+  severity: ERROR
+  message: "[행안부 보안기능] 부적절한 인증서 유효성 검증: 서버 인증서나 호스트 이름을 검증하지 않음(verify=False·CERT_NONE·check_hostname=False 등) — 검증을 켠 기본값을 쓰고, 사설 인증서는 verify=\"CA 번들 경로\"·ssl.create_default_context(cafile=…) 로 신뢰 저장소에 등록할 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "보안기능"
+    mois-item-no: "2-11"
+    mois-item: "부적절한 인증서 유효성 검증"
+    cwe: "CWE-295"
+    gate: block
+  # block 규칙에는 라이브러리를 확인할 수 있는 형태만 둔다 (docs/rule-conventions.md 3절).
+  # "아무 호출의 verify=False" 는 아래 warn 규칙(mois-2-11-improper-cert-validation-generic-py)이 맡는다
+  pattern-either:
+    # requests / httpx / boto3: verify=False (import 로 풀리는 이름)
+    - pattern: requests.$M(..., verify=False, ...)
+    - pattern: httpx.$M(..., verify=False, ...)
+    - pattern: boto3.$M(..., verify=False, ...)
+    # 같은 함수(또는 모듈)에서 만든 requests 세션·boto3 세션으로 부르는 경우
+    # (httpx 는 요청마다 verify 를 줄 수 없고 Client(verify=False) 로만 끄므로 위 httpx.$M 가지로 충분하다)
+    - patterns:
+        - pattern: $S.$M(..., verify=False, ...)
+        - pattern-either:
+            - pattern-inside: |
+                $S = requests.$NEW(...)
+                ...
+            - pattern-inside: |
+                $S = boto3.$NEW(...)
+                ...
+            - pattern-inside: |
+                $S = boto3.session.$NEW(...)
+                ...
+            - pattern-inside: |
+                with requests.$NEW(...) as $S:
+                    ...
+    # 세션의 verify 속성을 끔: 같은 함수에서 만든 세션이거나, 이름이 세션·클라이언트로 보일 때
+    - patterns:
+        - pattern: $S.verify = False
+        - pattern-either:
+            - pattern-inside: |
+                $S = requests.$NEW(...)
+                ...
+            - pattern-inside: |
+                with requests.$NEW(...) as $S:
+                    ...
+            # 이름 일부만 맞으면 된다 (sess 는 session·http_session 도 잡는다)
+            - patterns:
+                - pattern: $S.verify = False
+                - metavariable-regex:
+                    metavariable: $S
+                    regex: (?i)^(s|.*(sess|client|http|request|conn).*)$
+    # aiohttp: ssl=False 는 인증서 검증을 끈다 (연결기·요청 메서드)
+    - pattern: aiohttp.TCPConnector(..., ssl=False, ...)
+    - pattern: aiohttp.TCPConnector(..., verify_ssl=False, ...)
+    - patterns:
+        - pattern-either:
+            - pattern: $O.$M(..., ssl=False, ...)
+            - pattern: $O.$M(..., verify_ssl=False, ...)
+        - metavariable-regex:
+            metavariable: $M
+            regex: ^(get|post|put|patch|delete|head|options|request|ws_connect)$
+    # ssl 모듈: 검증하지 않는 컨텍스트
+    - pattern: ssl._create_unverified_context
+    - pattern: ssl.CERT_NONE
+    - pattern: $CTX.check_hostname = False
+    # urllib3 (인자 이름이 urllib3 전용)
+    - pattern: $F(..., cert_reqs="CERT_NONE", ...)
+    - pattern: $F(..., assert_hostname=False, ...)
+    # python-ldap
+    - pattern: ldap.OPT_X_TLS_NEVER
+
+# 라이브러리를 확인할 수 없는 verify=False: 인자·속성으로 받은 세션(self.session.get(..., verify=False)),
+# 직접 만든 래퍼 함수(call_api(url, verify=False)) 등. 다른 뜻의 verify 인자일 수 있어 warn 으로 둔다

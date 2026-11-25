@@ -1,0 +1,62 @@
+rules:
+- id: mois-7-02-dangerous-api-py
+  languages: [python]
+  severity: WARNING
+  message: "[행안부 API 오용] 취약한 API 사용: 요청 처리 코드에서 sys.exit() 등으로 프로세스를 끝내거나 소켓을 직접 다루고, tempfile.mktemp·보안 검사용 assert 처럼 안전하지 않은 API 를 씀 — 오류는 HTTP 오류 응답으로 돌려주고 HTTP 클라이언트·tempfile.mkstemp/NamedTemporaryFile·if 검사 후 거부 응답을 쓸 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "API 오용"
+    mois-item-no: "7-2"
+    mois-item: "취약한 API 사용"
+    cwe: "CWE-676; CWE-242; CWE-246; CWE-382"
+    gate: warn
+  pattern-either:
+    # 요청 처리 함수(뷰·라우트·뷰 클래스 메서드) 안의 프로세스 종료(CWE-382)·소켓 직접 사용(CWE-246)
+    - patterns:
+        - pattern-either:
+            # 'request' 는 타입 표기가 붙은 인자(request: HttpRequest)에도 맞는다
+            - pattern-inside: |
+                def $H(request, ...):
+                    ...
+            - pattern-inside: |
+                def $H(self, request, ...):
+                    ...
+            - patterns:
+                - pattern-inside: |
+                    @$APP.$METHOD(...)
+                    def $H(...):
+                        ...
+                - metavariable-regex:
+                    metavariable: $METHOD
+                    regex: ^(get|post|put|patch|delete|head|options|route|api_route|websocket)$
+            - patterns:
+                - pattern-inside: |
+                    class $C(..., $BASE, ...):
+                        ...
+                - metavariable-regex:
+                    metavariable: $BASE
+                    regex: .*(View|ViewSet|Resource)$
+                - pattern-inside: |
+                    def $H(self, ...):
+                        ...
+        - pattern-either:
+            - pattern: sys.exit(...)
+            - pattern: os._exit(...)
+            - pattern: os.abort(...)
+            - pattern: exit(...)
+            - pattern: quit(...)
+            - pattern: socket.socket(...)
+            - pattern: socket.create_connection(...)
+            - pattern: socket.create_server(...)
+    # 이름만 만들고 파일은 만들지 않는 임시 파일 API: 그 사이에 다른 프로세스가 같은 이름을 선점할 수 있음 (CWE-676)
+    # (os.tempnam·os.tmpnam 은 Python 3 에 없어 규칙에서 뺐다)
+    - pattern: tempfile.mktemp(...)
+    # assert 로 인증·권한 검사: python -O 로 실행하면 assert 문이 제거됨
+    - patterns:
+        - pattern-either:
+            - pattern: assert <... $U.$ATTR ...>
+            - pattern: assert <... $U.$ATTR ...>, $MSG
+        - metavariable-regex:
+            metavariable: $ATTR
+            regex: ^(is_authenticated|is_staff|is_superuser|is_admin|is_active|has_perm|has_perms|check_password)$

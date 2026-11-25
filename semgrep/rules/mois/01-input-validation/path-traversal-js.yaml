@@ -1,0 +1,454 @@
+rules:
+- id: mois-1-03-path-traversal-js
+  mode: taint
+  languages: [javascript, typescript]
+  severity: ERROR
+  message: "[행안부 입력데이터 검증 및 표현] 경로 조작 및 자원 삽입: 외부 입력이 파일 경로(fs 읽기·쓰기·삭제, res.sendFile·res.download)에 사용됨 — path.basename 으로 파일 이름만 남기거나, path.resolve(기준, 입력) 결과가 기준 경로 + path.sep 으로 시작하는지 확인하고 아니면 중단할 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "입력데이터 검증 및 표현"
+    mois-item-no: "1-3"
+    mois-item: "경로 조작 및 자원 삽입"
+    cwe: "CWE-22"
+    gate: block
+  # 참고: semgrep-rules javascript/express/security/audit/express-path-join-resolve-traversal.yaml,
+  #       javascript/express/security/audit/express-res-sendfile.yaml
+  options:
+    go_deeper_stmt: false
+  pattern-sources:
+    # (A) 서버 요청 값 (정규식은 가지마다 따로 건다 — 한 묶음에서 일부 가지에만 있는 메타변수에 걸면 나머지 가지가 무효가 된다)
+    - patterns:
+        - pattern: $REQ.$ATTR
+        - metavariable-regex:
+            metavariable: $REQ
+            regex: ^(req|request)$
+        - metavariable-regex:
+            metavariable: $ATTR
+            regex: ^(query|body|params|cookies|signedCookies|headers|originalUrl|url|path|hostname|files|file)$
+    - patterns:
+        - pattern: $REQ.$GET(...)
+        - metavariable-regex:
+            metavariable: $REQ
+            regex: ^(req|request)$
+        - metavariable-regex:
+            metavariable: $GET
+            regex: ^(get|header|param)$
+    - pattern: ctx.query
+    - pattern: ctx.params
+    - pattern: ctx.headers
+    - pattern: ctx.cookies.get(...)
+    - patterns:
+        - pattern: ctx.request.$ATTR
+        - metavariable-regex:
+            metavariable: $ATTR
+            regex: ^(query|body|headers|files|url|path)$
+    # (A-2) 요청 객체를 구조분해한 핸들러 매개변수: ({ params, query, body }: Request, res) => …  (두 번째 매개변수가 res·response·reply 일 때만)
+    - patterns:
+        - pattern-either:
+            - pattern-inside: |
+                ({..., $K, ...}, $RES, ...) => { ... }
+            - pattern-inside: |
+                ({..., $K, ...}: $T, $RES, ...) => { ... }
+            - pattern-inside: |
+                function ({..., $K, ...}, $RES, ...) { ... }
+            - pattern-inside: |
+                function $FN({..., $K, ...}, $RES, ...) { ... }
+        - metavariable-regex:
+            metavariable: $K
+            regex: ^(query|body|params|cookies|headers|files|file)$
+        - metavariable-regex:
+            metavariable: $RES
+            regex: ^(res|response|reply)$
+        - pattern: $K
+    # (B) NestJS 컨트롤러 매개변수 (숫자 변환 파이프 ParseIntPipe·ParseFloatPipe·ParseBoolPipe·ParseUUIDPipe 를 준 것은 제외)
+    - patterns:
+        - pattern-either:
+            - pattern-inside: |
+                $M(..., @$D(...) $P, ...) { ... }
+            - pattern-inside: |
+                $M(..., @$D(...) $P: $T, ...) { ... }
+            - pattern-inside: |
+                async $M(..., @$D(...) $P, ...) { ... }
+            - pattern-inside: |
+                async $M(..., @$D(...) $P: $T, ...) { ... }
+        - metavariable-regex:
+            metavariable: $D
+            regex: ^(Query|Body|Param|Headers|Req|Request)$
+        - pattern-not-inside:
+            patterns:
+              - pattern-either:
+                  - pattern-inside: |
+                      $M(..., @$D(..., $PIPE, ...) $P: $T, ...) { ... }
+                  - pattern-inside: |
+                      async $M(..., @$D(..., $PIPE, ...) $P: $T, ...) { ... }
+                  - pattern-inside: |
+                      $M(..., @$D(..., new $PIPE(...), ...) $P: $T, ...) { ... }
+                  - pattern-inside: |
+                      async $M(..., @$D(..., new $PIPE(...), ...) $P: $T, ...) { ... }
+              - metavariable-regex:
+                  metavariable: $PIPE
+                  regex: ^Parse(Int|Float|Bool|UUID|Enum)Pipe$
+        - focus-metavariable: $P
+    # (C) 브라우저 입력
+    - patterns:
+        - pattern-either:
+            - pattern: location.$LOC
+            - pattern: window.location.$LOC
+            - pattern: document.location.$LOC
+        - metavariable-regex:
+            metavariable: $LOC
+            regex: ^(href|search|hash|pathname)$
+    - pattern: document.URL
+    - pattern: document.documentURI
+    - pattern: document.referrer
+    - pattern: window.name
+    - patterns:
+        - pattern-inside: |
+            $W.addEventListener("message", ($E) => { ... })
+        - pattern: $E.data
+    # Angular ActivatedRoute: this.route.snapshot.queryParams.q · .params · .paramMap.get(...) · .fragment
+    - patterns:
+        - pattern: $R.snapshot.$P
+        - metavariable-regex:
+            metavariable: $P
+            regex: ^(queryParams|params|queryParamMap|paramMap|fragment)$
+    - pattern: useParams()
+    - pattern: useSearchParams()
+    - pattern: useLocation()
+    - pattern: useRouter().query
+    - patterns:
+        - pattern-inside: |
+            $R = useRouter();
+            ...
+        - pattern: $R.query
+  pattern-sanitizers:
+    # ── 공통 sanitizer (JS) — 규칙 파일마다 같은 내용. 가지별 증명은 mois-1-05-os-command-injection-js fixture 에서 한다 ──
+    # (공통 1) 숫자 변환 결과: parseInt(x) · parseFloat(x) · Number(x) · Number.parseInt(x) · Number.parseFloat(x)
+    - patterns:
+        - pattern-either:
+            - pattern: parseInt(...)
+            - pattern: parseFloat(...)
+            - pattern: Number(...)
+            - pattern: Number.parseInt(...)
+            - pattern: Number.parseFloat(...)
+    # (공통 2) 허용 목록 검사 — 실패 시 중단 (규약 §1 v2): if (!ALLOWED.includes(x)) { …; return; } 뒤의 x
+    #   ALLOWED 는 같은 파일에 const 로 선언한 문자열·숫자 리터럴 배열(또는 new Set([...]))이어야 하고, 선언 뒤 최상위 문장이나
+    #   같은 블록에서 push·add·splice 등으로 바꾸지 않아야 한다 (다른 함수 안의 변경은 보지 못한다 — 한계).
+    #   조건식은 검사 하나, 또는 null 검사와 || 로 묶은 것만 인정한다 (&&·!(…)·?: 로 감싸면 불인정).
+    #   실패 분기 안에서 쓰는 것, 검사 뒤 재대입·덧붙임(같은 블록과 한 단계 안쪽)은 인정하지 않는다.
+    - patterns:
+        - pattern-either:
+            - pattern-inside: |
+                if ($COND) { ... return ...; }
+                ...
+            - pattern-inside: |
+                if ($COND) { ... throw $E; }
+                ...
+            - pattern-inside: |
+                if ($COND) return ...;
+                ...
+            - pattern-inside: |
+                if ($COND) throw $E;
+                ...
+        - pattern-inside: |
+            const $ALLOW = $LIT;
+            ...
+        - metavariable-regex:
+            metavariable: $LIT
+            regex: '^(?:new\s+Set\(\s*)?\[\s*(?:(?:"[^"\\\n]*"|''[^''\\\n]*''|-?\d+)\s*(?:,\s*)?)*\](?:\s*\))?$'
+        - metavariable-pattern:
+            metavariable: $COND
+            pattern-either:
+              - pattern: '!$ALLOW.includes($X)'
+              - pattern: '!$ALLOW.has($X)'
+        - metavariable-regex:
+            metavariable: $COND
+            regex: '^(?:!?\s*[\w$.]+(?:\s*[!=]==?\s*(?:null|undefined))?\s*\|\|\s*)*!\s*[\w$]+\.(?:includes|has)\(\s*[\w$.]+\s*\)(?:\s*\|\|\s*!?\s*[\w$.]+(?:\s*[!=]==?\s*(?:null|undefined))?)*$'
+        - pattern-not-inside: |
+            if ($COND) $S;
+        - pattern-not-inside: |
+            if ($COND) $S;
+            ...
+            $X = $V;
+            ...
+        - pattern-not-inside: |
+            if ($COND) $S;
+            ...
+            $X += $V;
+            ...
+        - pattern-not-inside:
+            patterns:
+              - pattern-either:
+                  - pattern: |
+                      const $ALLOW = $LIT;
+                      ...
+                      $ALLOW.$MUT(...);
+                      ...
+                  - pattern: |
+                      $ALLOW.$MUT(...);
+                      ...
+              - metavariable-regex:
+                  metavariable: $MUT
+                  regex: ^(push|unshift|splice|fill|copyWithin|add|delete|clear|pop|shift)$
+        - pattern-not-inside: |
+            const $ALLOW = $LIT;
+            ...
+            $ALLOW[$I] = $V;
+            ...
+        - pattern-not-inside: |
+            $ALLOW[$I] = $V;
+            ...
+        - pattern: $X
+    # (공통 3) 형식 검사 — 실패 시 중단: if (!/^[a-z0-9_-]+$/.test(x)) return …; · if (!Number.isInteger(x)) throw …; 뒤의 x
+    #   정규식은 조건에 바로 적은 리터럴이고 ^…$ 로 전체를 고정하며, 글자 묶음이 영문·숫자·_·- 뿐이어야 한다 (. / \ 공백·따옴표 불가)
+    - patterns:
+        - pattern-either:
+            - pattern-inside: |
+                if ($COND) { ... return ...; }
+                ...
+            - pattern-inside: |
+                if ($COND) { ... throw $E; }
+                ...
+            - pattern-inside: |
+                if ($COND) return ...;
+                ...
+            - pattern-inside: |
+                if ($COND) throw $E;
+                ...
+        - metavariable-pattern:
+            metavariable: $COND
+            pattern-either:
+              - pattern: '!$RE.test($X)'
+              - pattern: '!Number.isInteger($X)'
+        - metavariable-regex:
+            metavariable: $COND
+            regex: '^(?:!?\s*[\w$.]+(?:\s*[!=]==?\s*(?:null|undefined))?\s*\|\|\s*)*!\s*(?:/\^(?:(?:\[(?:[A-Za-z0-9_]|\\[wd]|\\?-)+\]|\\[wd]|[A-Za-z0-9_])(?:[+*?]|\{\d+(?:,\d*)?\})?)+\$/[gimsuy]*\.test|Number\.isInteger)\(\s*[\w$.]+\s*\)(?:\s*\|\|\s*!?\s*[\w$.]+(?:\s*[!=]==?\s*(?:null|undefined))?)*$'
+        - pattern-not-inside: |
+            if ($COND) $S;
+        - pattern-not-inside: |
+            if ($COND) $S;
+            ...
+            $X = $V;
+            ...
+        - pattern-not-inside: |
+            if ($COND) $S;
+            ...
+            $X += $V;
+            ...
+        - pattern: $X
+    # (공통 4) 조건 안에서만 사용: if (ALLOWED.includes(x)) { use(x) } — else 없는 if, 조건은 검사 하나뿐 (&&·|| 로 묶으면 불인정)
+    - patterns:
+        - pattern-inside: |
+            if ($COND) $S;
+        - pattern-not-inside: |
+            if ($COND) $S; else $S2;
+        - pattern-inside: |
+            const $ALLOW = $LIT;
+            ...
+        - metavariable-regex:
+            metavariable: $LIT
+            regex: '^(?:new\s+Set\(\s*)?\[\s*(?:(?:"[^"\\\n]*"|''[^''\\\n]*''|-?\d+)\s*(?:,\s*)?)*\](?:\s*\))?$'
+        - metavariable-pattern:
+            metavariable: $COND
+            pattern-either:
+              - pattern: $ALLOW.includes($X)
+              - pattern: $ALLOW.has($X)
+        - metavariable-regex:
+            metavariable: $COND
+            regex: '^[\w$]+\.(?:includes|has)\(\s*[\w$.]+\s*\)$'
+        - pattern-not-inside: |
+            if ($COND) { ... $X = $V; ... }
+        - pattern-not-inside: |
+            if ($COND) { ... $X += $V; ... }
+        - pattern-not-inside:
+            patterns:
+              - pattern-either:
+                  - pattern: |
+                      const $ALLOW = $LIT;
+                      ...
+                      $ALLOW.$MUT(...);
+                      ...
+                  - pattern: |
+                      $ALLOW.$MUT(...);
+                      ...
+              - metavariable-regex:
+                  metavariable: $MUT
+                  regex: ^(push|unshift|splice|fill|copyWithin|add|delete|clear|pop|shift)$
+        - pattern-not-inside: |
+            const $ALLOW = $LIT;
+            ...
+            $ALLOW[$I] = $V;
+            ...
+        - pattern-not-inside: |
+            $ALLOW[$I] = $V;
+            ...
+        - pattern: $X
+    # (공통 5) 조건 안에서만 사용: if (/^[a-z0-9_-]+$/.test(x)) · if (Number.isInteger(x)) · if (x === "리터럴")
+    - patterns:
+        - pattern-inside: |
+            if ($COND) $S;
+        - pattern-not-inside: |
+            if ($COND) $S; else $S2;
+        - metavariable-pattern:
+            metavariable: $COND
+            pattern-either:
+              - pattern: $RE.test($X)
+              - pattern: Number.isInteger($X)
+              - pattern: $X === $L
+        - metavariable-regex:
+            metavariable: $COND
+            regex: '^(?:(?:/\^(?:(?:\[(?:[A-Za-z0-9_]|\\[wd]|\\?-)+\]|\\[wd]|[A-Za-z0-9_])(?:[+*?]|\{\d+(?:,\d*)?\})?)+\$/[gimsuy]*\.test|Number\.isInteger)\(\s*[\w$.]+\s*\)|[\w$.]+\s*===\s*(?:"[^"\\\n]*"|''[^''\\\n]*''|-?\d+))$'
+        - pattern-not-inside: |
+            if ($COND) { ... $X = $V; ... }
+        - pattern-not-inside: |
+            if ($COND) { ... $X += $V; ... }
+        - pattern: $X
+    # 파일 이름만 남김: path.basename(x) — 디렉터리 부분이 없어진다
+    #   한계: basename("..") 은 ".." 이라, 기준 디렉터리에 붙여 디렉터리 전체를 지우거나(rm recursive) 목록을 읽는(readdir) 코드는 놓친다
+    - pattern: path.basename(...)
+    # 기준 디렉터리 확인 — 실패 시 중단: const p = path.resolve(BASE, x); if (!p.startsWith(BASE + path.sep)) return …; 뒤의 p
+    #   path.resolve · path.join 결과여야 하고(.. 가 정리된 경로), 비교는 구분자를 붙인 접두여야 한다 (BASE + path.sep · BASE + "/" · `${BASE}/`).
+    #   구분자 없는 startsWith(BASE) 는 /srv/app-evil 이 /srv/app 으로 통과하므로 인정하지 않는다. 재대입·실패 분기 안 사용은 불인정
+    - patterns:
+        - pattern-either:
+            - pattern-inside: |
+                if ($COND) { ... return ...; }
+                ...
+            - pattern-inside: |
+                if ($COND) { ... throw $E; }
+                ...
+            - pattern-inside: |
+                if ($COND) return ...;
+                ...
+            - pattern-inside: |
+                if ($COND) throw $E;
+                ...
+        - pattern-either:
+            - pattern-inside: |
+                $P = path.resolve($BASE, ...);
+                ...
+            - pattern-inside: |
+                $P = path.join($BASE, ...);
+                ...
+        - metavariable-pattern:
+            metavariable: $COND
+            pattern-either:
+              - pattern: '!$P.startsWith($BASE + $SEP)'
+              - pattern: '!$P.startsWith(`${$BASE}/`)'
+        - metavariable-regex:
+            metavariable: $COND
+            regex: '^(?:!?\s*[\w$.]+(?:\s*[!=]==?\s*(?:null|undefined))?\s*\|\|\s*)*!\s*[\w$]+\.startsWith\(\s*(?:[\w$.]+\s*\+\s*(?:path\.sep|"/"|''/''|"\\\\"|''\\\\'')|`\$\{[\w$.]+\}/`)\s*\)(?:\s*\|\|\s*!?\s*[\w$.]+(?:\s*[!=]==?\s*(?:null|undefined))?)*$'
+        - pattern-not-inside: |
+            if ($COND) $S;
+        - pattern-not-inside: |
+            if ($COND) $S;
+            ...
+            $P = $V;
+            ...
+        - pattern-not-inside: |
+            if ($COND) $S;
+            ...
+            $P += $V;
+            ...
+        - pattern: $P
+  pattern-sinks:
+    # 그 파일에서 require·import 로 가져온 fs 모듈 (fs · node:fs · fs/promises · fs-extra · graceful-fs) 의 파일 읽기·쓰기·삭제 함수
+    #   경로 인자 하나: 첫 인자. 경로 인자 둘(copyFile·rename·cp·link·symlink): 두 인자 모두
+    - patterns:
+        - pattern-either:
+            - patterns:
+                - pattern-either:
+                    - pattern-inside: |
+                        $FS = require("$M");
+                        ...
+                    - pattern-inside: |
+                        $FS = require("$M").promises;
+                        ...
+                    - pattern-inside: |
+                        import * as $FS from "$M";
+                        ...
+                    - pattern-inside: |
+                        import $FS from "$M";
+                        ...
+                - pattern-either:
+                    - pattern: $FS.$FN($P, ...)
+                    - pattern: $FS.promises.$FN($P, ...)
+            - patterns:
+                - pattern-either:
+                    - pattern-inside: |
+                        const {..., $FN: $LOCAL, ...} = require("$M");
+                        ...
+                    - pattern-inside: |
+                        import { $FN as $LOCAL } from "$M";
+                        ...
+                    - pattern-inside: |
+                        $LOCAL = require("$M").$FN;
+                        ...
+                - pattern: $LOCAL($P, ...)
+            - patterns:
+                - pattern-inside: |
+                    import { $FN } from "$M";
+                    ...
+                - pattern: $FN($P, ...)
+        - metavariable-regex:
+            metavariable: $M
+            regex: ^((node:)?fs(/promises)?|fs-extra|graceful-fs)$
+        - metavariable-regex:
+            metavariable: $FN
+            regex: ^(readFile|writeFile|appendFile|createReadStream|createWriteStream|unlink|rm|rmdir|open|readdir|opendir|mkdir|copyFile|rename|cp|link|symlink|truncate|chmod|chown|readJson|readJSON|writeJson|writeJSON|outputFile|outputJson|remove|move|copy|emptyDir|ensureFile|pathExists)(Sync)?$
+        - focus-metavariable: $P
+    # 경로 인자가 둘인 함수의 두 번째 인자 (복사·이동·링크의 대상 경로)
+    - patterns:
+        - pattern-either:
+            - patterns:
+                - pattern-either:
+                    - pattern-inside: |
+                        $FS = require("$M");
+                        ...
+                    - pattern-inside: |
+                        $FS = require("$M").promises;
+                        ...
+                    - pattern-inside: |
+                        import * as $FS from "$M";
+                        ...
+                    - pattern-inside: |
+                        import $FS from "$M";
+                        ...
+                - pattern-either:
+                    - pattern: $FS.$FN($P0, $P, ...)
+                    - pattern: $FS.promises.$FN($P0, $P, ...)
+            - patterns:
+                - pattern-either:
+                    - pattern-inside: |
+                        const {..., $FN: $LOCAL, ...} = require("$M");
+                        ...
+                    - pattern-inside: |
+                        import { $FN as $LOCAL } from "$M";
+                        ...
+                    - pattern-inside: |
+                        $LOCAL = require("$M").$FN;
+                        ...
+                - pattern: $LOCAL($P0, $P, ...)
+            - patterns:
+                - pattern-inside: |
+                    import { $FN } from "$M";
+                    ...
+                - pattern: $FN($P0, $P, ...)
+        - metavariable-regex:
+            metavariable: $M
+            regex: ^((node:)?fs(/promises)?|fs-extra|graceful-fs)$
+        - metavariable-regex:
+            metavariable: $FN
+            regex: ^(copyFile|rename|cp|link|symlink|move|copy)(Sync)?$
+        - focus-metavariable: $P
+    # Express: res.sendFile(path) · res.download(path) — root 옵션을 주면 Express(send)가 .. 를 막으므로 제외
+    - patterns:
+        - pattern-either:
+            - pattern: $RES.sendFile($P, ...)
+            - pattern: $RES.download($P, ...)
+        - metavariable-regex:
+            metavariable: $RES
+            regex: ^(res|response)$
+        - pattern-not: '$RES.$SEND($P, ..., {..., root: $ROOT, ...}, ...)'
+        - focus-metavariable: $P

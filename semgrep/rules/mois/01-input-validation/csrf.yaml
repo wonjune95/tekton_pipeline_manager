@@ -1,0 +1,19 @@
+rules:
+- id: mois-1-11-csrf
+  languages: [java]
+  severity: WARNING
+  message: "[행안부 입력데이터 검증 및 표현] 크로스사이트 요청 위조: Spring Security 의 CSRF 토큰 검사를 끔 — 세션·쿠키로 인증하는 화면이면 CSRF 보호를 켜고, 토큰 없는 API 만 예외로 둘 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "입력데이터 검증 및 표현"
+    mois-item-no: "1-11"
+    mois-item: "크로스사이트 요청 위조"
+    cwe: "CWE-352"
+    gate: warn
+  # 서블릿에서 직접 토큰을 비교하는지는 판정하지 못한다. Spring Security 설정에서 CSRF 를 끄는 경우만 본다.
+  pattern-either:
+    - pattern: $HTTP.csrf().disable()
+    - pattern: $HTTP.csrf($C -> $C.disable())
+    # AbstractHttpConfigurer::disable, CsrfConfigurer::disable, ServerHttpSecurity.CsrfSpec::disable 등
+    - pattern: $HTTP.csrf($CLS::disable)

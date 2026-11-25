@@ -1,0 +1,392 @@
+rules:
+- id: mois-5-05-insecure-deserialization
+  mode: taint
+  languages: [java]
+  severity: ERROR
+  message: "[행안부 코드오류] 신뢰할 수 없는 데이터의 역직렬화: 외부 입력(요청 본문·업로드 파일·소켓)을 검증 없이 역직렬화함 — 허용 클래스 목록(resolveClass·ObjectInputFilter)으로 제한하거나 서명으로 무결성을 확인할 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "코드오류"
+    mois-item-no: "5-5"
+    mois-item: "신뢰할 수 없는 데이터의 역직렬화"
+    cwe: "CWE-502"
+    gate: block
+  # 공통 source (scratchpad/src-block/common-sources.yaml) + 업로드 파일·소켓 입력
+  pattern-sources:
+    - patterns:
+        - pattern-either:
+            - pattern: (javax.servlet.http.HttpServletRequest $REQ).$GET(...)
+            - pattern: (jakarta.servlet.http.HttpServletRequest $REQ).$GET(...)
+        - metavariable-regex:
+            metavariable: $GET
+            regex: ^(getParameter|getParameterValues|getParameterMap|getParameterNames|getHeader|getHeaders|getHeaderNames|getQueryString|getRequestURI|getRequestURL|getPathInfo|getCookies|getInputStream|getReader|getPart|getParts)$
+    - pattern: (javax.servlet.http.Cookie $CK).getValue()
+    - pattern: (jakarta.servlet.http.Cookie $CK).getValue()
+    # 요청을 감싼 표준 객체: Spring 멀티파트·WebRequest, cos MultipartRequest, 업로드 파일의 원본 이름
+    - patterns:
+        - pattern-either:
+            - pattern: (org.springframework.web.multipart.MultipartHttpServletRequest $REQ).$GET(...)
+            - pattern: (org.springframework.web.multipart.MultipartRequest $REQ).$GET(...)
+            - pattern: (org.springframework.web.context.request.WebRequest $REQ).$GET(...)
+            - pattern: (org.springframework.web.context.request.NativeWebRequest $REQ).$GET(...)
+            - pattern: (com.oreilly.servlet.MultipartRequest $REQ).$GET(...)
+            - pattern: (javax.servlet.ServletRequest $REQ).$GET(...)
+            - pattern: (jakarta.servlet.ServletRequest $REQ).$GET(...)
+        - metavariable-regex:
+            metavariable: $GET
+            regex: ^(getParameter|getParameterValues|getParameterMap|getParameterNames|getHeader|getHeaderValues|getHeaderNames|getFilesystemName|getOriginalFileName|getFileNames|getInputStream|getReader)$
+    - pattern: (org.springframework.web.multipart.MultipartFile $MF).getOriginalFilename()
+    - patterns:
+        - pattern-either:
+            - pattern: $RET $M(..., @$A(...) $T $P, ...) { ... }
+            - pattern: $RET $M(..., @$A $T $P, ...) { ... }
+        - metavariable-regex:
+            metavariable: $A
+            regex: ^(RequestParam|PathVariable|RequestHeader|CookieValue|RequestBody|ModelAttribute|MatrixVariable)$
+        - metavariable-regex:
+            metavariable: $T
+            regex: ^(?!(int|long|short|byte|double|float|boolean|Integer|Long|Short|Byte|Double|Float|Boolean|BigDecimal|BigInteger|UUID|LocalDate|LocalDateTime)$).*
+        - focus-metavariable: $P
+    # Spring MVC 는 애너테이션이 없는 핸들러 매개변수도 요청 값으로 채운다 (단순형은 요청 파라미터, 객체는 폼 바인딩).
+    # 숫자·날짜형과 프레임워크가 넣어 주는 객체(요청·응답·세션·모델 등), 요청과 무관한 애너테이션은 제외
+    - patterns:
+        - pattern-either:
+            - pattern: |
+                @$MAP(...)
+                $RET $M(..., $T $P, ...) { ... }
+            - pattern: |
+                @$MAP
+                $RET $M(..., $T $P, ...) { ... }
+        - metavariable-regex:
+            metavariable: $MAP
+            regex: ^(RequestMapping|GetMapping|PostMapping|PutMapping|PatchMapping|DeleteMapping)$
+        - metavariable-regex:
+            metavariable: $T
+            regex: ^(?!(int|long|short|byte|double|float|boolean|char|Integer|Long|Short|Byte|Double|Float|Boolean|Character|BigDecimal|BigInteger|UUID|LocalDate|LocalDateTime|Date|HttpServletRequest|HttpServletResponse|ServletRequest|ServletResponse|HttpSession|Model|ModelMap|ModelAndView|Map|BindingResult|Errors|Locale|TimeZone|Principal|Authentication|RedirectAttributes|SessionStatus|UriComponentsBuilder|Pageable|Sort|WebRequest|NativeWebRequest|InputStream|OutputStream|Reader|Writer|HttpMethod)\b).*
+        # 애너테이션이 붙은 매개변수는 여기서 보지 않는다. 요청 바인딩 애너테이션은 위 항목, 검증 애너테이션은 아래 항목이 본다.
+        # 그 밖의 애너테이션(@AuthenticationPrincipal, 직접 만든 @CurrentUser 등)은 요청 값이 아니라 프레임워크·리졸버가 넣는 값이다
+        - pattern-not: $RET $M(..., @$ANN(...) $T $P, ...) { ... }
+        - focus-metavariable: $P
+    # 검증 애너테이션만 붙은 핸들러 매개변수(@Valid MemberForm form)도 요청 값으로 채워진다
+    - patterns:
+        - pattern: |
+            @$MAP(...)
+            $RET $M(..., @$VA(...) $T $P, ...) { ... }
+        - metavariable-regex:
+            metavariable: $MAP
+            regex: ^(RequestMapping|GetMapping|PostMapping|PutMapping|PatchMapping|DeleteMapping)$
+        - metavariable-regex:
+            metavariable: $VA
+            regex: ^(Valid|Validated|NotNull|NotBlank|NotEmpty|Size|Pattern|Length|Email|Nullable|NonNull)$
+        - metavariable-regex:
+            metavariable: $T
+            regex: ^(?!(int|long|short|byte|double|float|boolean|char|Integer|Long|Short|Byte|Double|Float|Boolean|Character|BigDecimal|BigInteger|UUID|LocalDate|LocalDateTime|Date|HttpServletRequest|HttpServletResponse|ServletRequest|ServletResponse|HttpSession|Model|ModelMap|ModelAndView|Map|BindingResult|Errors|Locale|TimeZone|Principal|Authentication|RedirectAttributes|SessionStatus|UriComponentsBuilder|Pageable|Sort|WebRequest|NativeWebRequest|InputStream|OutputStream|Reader|Writer|HttpMethod)\b).*
+        - focus-metavariable: $P
+    - pattern: (org.springframework.web.multipart.MultipartFile $MF).getInputStream()
+    - pattern: (java.net.Socket $SK).getInputStream()
+  # 허용 클래스 필터는 "역직렬화하는 그 스트림"에 "읽기 전에" 걸었을 때만 인정한다 (같은 메서드의 다른 스트림에 건 필터는 인정하지 않음).
+  # 필터를 걸었다는 것만으로는 인정하지 않는다. JEP 290 필터는 판단하지 않은(UNDECIDED) 클래스를 통과시키므로
+  # "목록에 없는 클래스는 거부"가 코드에 보이는 두 형태만 인정한다:
+  #   ① 리터럴 패턴이 `;!*` 로 끝나는 createFilter (앞에 모두 허용하는 `*` 항목이 없을 것).
+  #      같은 메서드의 지역 변수, 같은 클래스의 final 필드에 담아 쓴 것도 인정
+  #   ② ObjectInputFilter.rejectUndecidedClass(...) 로 감싼 필터 (감싼 필터가 뻔히 모두 허용이면 제외)
+  # 인정하지 않는 것: maxdepth 같은 한도만 둔 패턴, `!*` 없는 패턴, 람다·직접 만든 필터, getSerialFilter(), 변수로 받은 패턴 문자열, null
+  pattern-sanitizers:
+    - by-side-effect: true
+      patterns:
+        - pattern-either:
+            - pattern: $OIS.setObjectInputFilter(ObjectInputFilter.Config.createFilter($ARG))
+            - patterns:
+                - pattern: $OIS.setObjectInputFilter($F)
+                - pattern-either:
+                    # 지역 변수: 만든 뒤에 다른 값으로 바꾸지 않은 것 (블록 안의 선언만 본다. final 이 아닌 필드는 여기에 맞지 않는다)
+                    - patterns:
+                        - pattern-inside: |
+                            { ... $T $F = ObjectInputFilter.Config.createFilter($ARG); ... }
+                        - pattern-not-inside: |
+                            { ... $T2 $F = $INIT; ... $F = $V; ... }
+                    # final 필드 (같은 이름의 지역 변수·매개변수가 가리면 Semgrep 이 다른 변수로 본다)
+                    - pattern-inside: |
+                        class $C { ... final $T $F = ObjectInputFilter.Config.createFilter($ARG); ... }
+        # 패턴 문자열은 리터럴이거나 값이 정해진 상수여야 한다 (상수는 값으로 본다). 이어 붙인 식·변수는 인정하지 않는다
+        - metavariable-regex:
+            metavariable: $ARG
+            regex: ^"?(?!\*;)(?!.*;\*;)[^"]*;!\*"?$
+            constant-propagation: true
+        - focus-metavariable: $OIS
+    - by-side-effect: true
+      patterns:
+        - pattern: $OIS.setObjectInputFilter(ObjectInputFilter.rejectUndecidedClass(...))
+        # 감싼 필터가 무조건 허용이면 거부할 "미결정" 클래스가 남지 않는다
+        - pattern-not:
+            patterns:
+              - pattern: $OIS.setObjectInputFilter(ObjectInputFilter.rejectUndecidedClass(<... $P -> $ST ...>))
+              - metavariable-regex:
+                  metavariable: $ST
+                  regex: ^(.*\.)?(ALLOWED|true)$
+        - pattern-not:
+            patterns:
+              - pattern: $OIS.setObjectInputFilter(ObjectInputFilter.rejectUndecidedClass(<... $CFG.createFilter("$STAR") ...>))
+              - metavariable-regex:
+                  metavariable: $STAR
+                  regex: ^(.*;)?\*(;.*)?$
+        - focus-metavariable: $OIS
+  # sink 는 스트림 생성이 아니라 실제 역직렬화 호출 (오염된 입력으로 만든 스트림 객체 → readObject)
+  pattern-sinks:
+    - patterns:
+        - pattern-either:
+            - pattern: (java.io.ObjectInputStream $OIS).$READ()
+            - pattern: (java.io.ObjectInput $OIS).$READ()
+        - metavariable-regex:
+            metavariable: $READ
+            regex: ^(readObject|readUnshared)$
+        - focus-metavariable: $OIS
+    - patterns:
+        - pattern: (java.beans.XMLDecoder $DEC).readObject()
+        - focus-metavariable: $DEC
+    - patterns:
+        - pattern: (com.thoughtworks.xstream.XStream $XS).fromXML($IN, ...)
+        # XStream 은 "허용 목록을 정하는 호출이 있다"가 아니라 "허용 목록만 남았다"가 보일 때만 제외한다.
+        # 권한은 나중에 넣은 것이 먼저 적용되고, 1.4.17 이하는 기본이 모두 허용이라 allowTypes 만으로는 제한되지 않는다.
+        - pattern-either:
+            # (가) 같은 객체를 fromXML 전에 "모두 거부"로 초기화하지 않았다 (조건문 안에서만 초기화한 것도 여기에 걸린다)
+            - patterns:
+                - pattern: $XS.fromXML(...)
+                - pattern-not-inside: |
+                    $XS.addPermission(com.thoughtworks.xstream.security.NoTypePermission.NONE);
+                    ...
+                - pattern-not-inside: |
+                    com.thoughtworks.xstream.XStream.setupDefaultSecurity($XS);
+                    ...
+            # (나) 초기화한 뒤 변수에 다른 XStream 객체를 넣고 읽었다: 새 객체는 초기화되지 않았다
+            #     ("초기화 호출 뒤에 나오는 대입"에서 시작하는 구간 안의 fromXML 만 본다. 교체 전의 fromXML 은 해당하지 않는다)
+            - pattern-inside:
+                patterns:
+                  - pattern: |
+                      $XS = $NEW;
+                      ...
+                  - pattern-either:
+                      - pattern-inside: |
+                          $XS.addPermission(...);
+                          ...
+                          $XS = $NEW2;
+                          ...
+                      - pattern-inside: |
+                          com.thoughtworks.xstream.XStream.setupDefaultSecurity($XS);
+                          ...
+                          $XS = $NEW2;
+                          ...
+            # 아래 (다)~(마)는 초기화했더라도 같은 블록 안(조건문 안 포함)에서 허용 범위를 증명할 수 없게 넓힌 경우다
+            # (다) NONE·NULL·PRIMITIVES 가 아닌 권한 (AnyTypePermission.ANY, 직접 만든 권한 등)
+            - patterns:
+                - pattern-inside: |
+                    { ... $XS.addPermission($PERM); ... }
+                - metavariable-regex:
+                    metavariable: $PERM
+                    regex: ^(?!(com\.thoughtworks\.xstream\.security\.)?(NoTypePermission\.NONE|NullPermission\.NULL|PrimitiveTypePermission\.PRIMITIVES)$)
+            # (라) 상위 타입 허용은 `클래스이름.class` 로 적은 것만 인정하고, 그중 Object·Serializable(사실상 모든 클래스)은 인정하지 않는다
+            - patterns:
+                - pattern-inside: |
+                    { ... $XS.allowTypeHierarchy($SUPER); ... }
+                - metavariable-regex:
+                    metavariable: $SUPER
+                    regex: ^(?!(?!(.*\.)?(Object|Serializable)\.class$)[\w.]+\.class$)
+            # (마) 허용 목록은 "클래스 리터럴, 또는 패키지 이름으로 시작하는 문자열 리터럴만 든 배열"일 때만 제한으로 본다.
+            #      "**"·".*" 같은 전부 허용, `a|.*` 같은 대안, 변수·이어 붙인 식·요청 값은 인정하지 않는다
+            - patterns:
+                - pattern-either:
+                    - patterns:
+                        - pattern-inside: |
+                            { ... $XS.$ALLOW($LIST); ... }
+                        - metavariable-pattern:
+                            metavariable: $LIST
+                            patterns:
+                              - pattern-not: new $ELT[]{...}
+                    - patterns:
+                        - pattern-inside: |
+                            { ... $XS.$ALLOW(new $ELT[]{..., $ELEM, ...}); ... }
+                        - metavariable-regex:
+                            metavariable: $ELEM
+                            regex: ^(?!("\^?[A-Za-z_]\w*(\\\\)?\.[^|"]*"|[\w.]+\.class)$)
+                - metavariable-regex:
+                    metavariable: $ALLOW
+                    regex: ^(allowTypes|allowTypesByWildcard|allowTypesByRegExp)$
+        - focus-metavariable: $IN
+- id: mois-5-05-unsafe-deserializer
+  languages: [java]
+  severity: WARNING
+  message: "[행안부 코드오류] 신뢰할 수 없는 데이터의 역직렬화: 허용 클래스 제한 없이 역직렬화함 — 데이터 출처를 확인하고 허용 클래스 목록·서명 검증을 적용할 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "코드오류"
+    mois-item-no: "5-5"
+    mois-item: "신뢰할 수 없는 데이터의 역직렬화"
+    cwe: "CWE-502"
+    gate: warn
+  pattern-either:
+    # 필터 없는 ObjectInputStream 에서 객체를 읽음. 필터는 같은 스트림에, 읽기 전에 건 것만 인정하고,
+    # "목록에 없는 클래스는 거부"가 코드에 보이는 형태만 인정한다 (mois-5-05-insecure-deserialization 의 sanitizer 와 같은 기준)
+    - patterns:
+        - pattern: (java.io.ObjectInputStream $OIS).$READ()
+        - metavariable-regex:
+            metavariable: $READ
+            regex: ^(readObject|readUnshared)$
+        - pattern-either:
+            - patterns:
+                - pattern: $OIS.$READ()
+                # ① 리터럴 패턴이 `;!*` 로 끝나는 createFilter (직접, 지역 변수, final 필드)
+                - pattern-not-inside:
+                    patterns:
+                      - pattern-either:
+                          - pattern: |
+                              $OIS.setObjectInputFilter(ObjectInputFilter.Config.createFilter($ARG));
+                              ...
+                          - patterns:
+                              - pattern: |
+                                  $OIS.setObjectInputFilter($F);
+                                  ...
+                              - pattern-either:
+                                  - patterns:
+                                      - pattern-inside: |
+                                          { ... $T $F = ObjectInputFilter.Config.createFilter($ARG); ... }
+                                      - pattern-not-inside: |
+                                          { ... $T2 $F = $INIT; ... $F = $V; ... }
+                                  - pattern-inside: |
+                                      class $C { ... final $T $F = ObjectInputFilter.Config.createFilter($ARG); ... }
+                      - metavariable-regex:
+                          metavariable: $ARG
+                          regex: ^"?(?!\*;)(?!.*;\*;)[^"]*;!\*"?$
+                          constant-propagation: true
+                # ② rejectUndecidedClass 로 감싼 필터 (감싼 필터가 뻔히 모두 허용이면 제외)
+                - pattern-not-inside:
+                    patterns:
+                      - pattern: |
+                          $OIS.setObjectInputFilter(ObjectInputFilter.rejectUndecidedClass(...));
+                          ...
+                      - pattern-not:
+                          patterns:
+                            - pattern: |
+                                $OIS.setObjectInputFilter(ObjectInputFilter.rejectUndecidedClass(<... $P -> $ST ...>));
+                                ...
+                            - metavariable-regex:
+                                metavariable: $ST
+                                regex: ^(.*\.)?(ALLOWED|true)$
+                      - pattern-not:
+                          patterns:
+                            - pattern: |
+                                $OIS.setObjectInputFilter(ObjectInputFilter.rejectUndecidedClass(<... $CFG.createFilter("$STAR") ...>));
+                                ...
+                            - metavariable-regex:
+                                metavariable: $STAR
+                                regex: ^(.*;)?\*(;.*)?$
+            # 필터를 건 뒤 변수에 다른 스트림을 넣고 읽었다: 새 스트림에는 필터가 없다
+            #   ("필터 호출 뒤에 나오는 대입"에서 시작하는 구간 안의 읽기만 본다. 교체 전의 읽기는 해당하지 않는다)
+            - pattern-inside:
+                patterns:
+                  - pattern: |
+                      $OIS = $NEW;
+                      ...
+                  - pattern-inside: |
+                      $OIS.setObjectInputFilter(...);
+                      ...
+                      $OIS = $NEW2;
+                      ...
+        # 직렬화 훅(private void readObject(ObjectInputStream in)) 안에서 읽는 것은 이미 진행 중인 역직렬화의 일부.
+        # private 이 아닌 같은 이름의 메서드는 훅이 아니라 직접 불러 쓰는 메서드다
+        - pattern-not-inside: |
+            private void readObject(java.io.ObjectInputStream $OIS) { ... }
+    # XMLDecoder 는 허용 클래스를 제한할 방법이 없다
+    - pattern: (java.beans.XMLDecoder $DEC).readObject()
+    # Jackson 다형성 역직렬화(기본 타입 정보). ObjectMapper·JsonMapper·빌더 어디에 걸어도 같다
+    - patterns:
+        - pattern: $OM.$ENABLE(...)
+        - metavariable-regex:
+            metavariable: $ENABLE
+            regex: ^(enableDefaultTyping|enableDefaultTypingAsProperty)$
+    # activateDefaultTyping 은 검증기가 BasicPolymorphicTypeValidator 빌더로 만든 것(인자에 직접 적었거나 같은 블록의 지역 변수)일 때만 제외한다.
+    # LaissezFaireSubTypeValidator, getPolymorphicTypeValidator()(기본값이 모두 허용), 직접 만든 검증기는 표시한다
+    - patterns:
+        - pattern: $OM.$ACTIVATE($PTV, ...)
+        - metavariable-regex:
+            metavariable: $ACTIVATE
+            regex: ^(activateDefaultTyping|activateDefaultTypingAsProperty)$
+        - pattern-either:
+            - patterns:
+                - pattern: $OM.$ACTIVATE(...)
+                - pattern-not: $OM.$ACTIVATE(BasicPolymorphicTypeValidator.builder(). ... .build(), ...)
+                - pattern-not-inside: |
+                    { ... $T $PTV = BasicPolymorphicTypeValidator.builder(). ... .build(); ... }
+            # 빌더로 만들었어도 Object 를 허용하면 모두 허용이다
+            - pattern: $OM.$ACTIVATE(<... Object.class ...>, ...)
+            - pattern-inside: |
+                { ... $T $PTV = <... Object.class ...>; ... }
+    # 허용 타입만 남기지 않은 XStream (같은 객체에, fromXML 전에 정한 것만 인정)
+    - patterns:
+        - pattern: (com.thoughtworks.xstream.XStream $XS).fromXML(...)
+        # XStream 은 "허용 목록을 정하는 호출이 있다"가 아니라 "허용 목록만 남았다"가 보일 때만 제외한다.
+        # 권한은 나중에 넣은 것이 먼저 적용되고, 1.4.17 이하는 기본이 모두 허용이라 allowTypes 만으로는 제한되지 않는다.
+        - pattern-either:
+            # (가) 같은 객체를 fromXML 전에 "모두 거부"로 초기화하지 않았다 (조건문 안에서만 초기화한 것도 여기에 걸린다)
+            - patterns:
+                - pattern: $XS.fromXML(...)
+                - pattern-not-inside: |
+                    $XS.addPermission(com.thoughtworks.xstream.security.NoTypePermission.NONE);
+                    ...
+                - pattern-not-inside: |
+                    com.thoughtworks.xstream.XStream.setupDefaultSecurity($XS);
+                    ...
+            # (나) 초기화한 뒤 변수에 다른 XStream 객체를 넣고 읽었다: 새 객체는 초기화되지 않았다
+            #     ("초기화 호출 뒤에 나오는 대입"에서 시작하는 구간 안의 fromXML 만 본다. 교체 전의 fromXML 은 해당하지 않는다)
+            - pattern-inside:
+                patterns:
+                  - pattern: |
+                      $XS = $NEW;
+                      ...
+                  - pattern-either:
+                      - pattern-inside: |
+                          $XS.addPermission(...);
+                          ...
+                          $XS = $NEW2;
+                          ...
+                      - pattern-inside: |
+                          com.thoughtworks.xstream.XStream.setupDefaultSecurity($XS);
+                          ...
+                          $XS = $NEW2;
+                          ...
+            # 아래 (다)~(마)는 초기화했더라도 같은 블록 안(조건문 안 포함)에서 허용 범위를 증명할 수 없게 넓힌 경우다
+            # (다) NONE·NULL·PRIMITIVES 가 아닌 권한 (AnyTypePermission.ANY, 직접 만든 권한 등)
+            - patterns:
+                - pattern-inside: |
+                    { ... $XS.addPermission($PERM); ... }
+                - metavariable-regex:
+                    metavariable: $PERM
+                    regex: ^(?!(com\.thoughtworks\.xstream\.security\.)?(NoTypePermission\.NONE|NullPermission\.NULL|PrimitiveTypePermission\.PRIMITIVES)$)
+            # (라) 상위 타입 허용은 `클래스이름.class` 로 적은 것만 인정하고, 그중 Object·Serializable(사실상 모든 클래스)은 인정하지 않는다
+            - patterns:
+                - pattern-inside: |
+                    { ... $XS.allowTypeHierarchy($SUPER); ... }
+                - metavariable-regex:
+                    metavariable: $SUPER
+                    regex: ^(?!(?!(.*\.)?(Object|Serializable)\.class$)[\w.]+\.class$)
+            # (마) 허용 목록은 "클래스 리터럴, 또는 패키지 이름으로 시작하는 문자열 리터럴만 든 배열"일 때만 제한으로 본다.
+            #      "**"·".*" 같은 전부 허용, `a|.*` 같은 대안, 변수·이어 붙인 식·요청 값은 인정하지 않는다
+            - patterns:
+                - pattern-either:
+                    - patterns:
+                        - pattern-inside: |
+                            { ... $XS.$ALLOW($LIST); ... }
+                        - metavariable-pattern:
+                            metavariable: $LIST
+                            patterns:
+                              - pattern-not: new $ELT[]{...}
+                    - patterns:
+                        - pattern-inside: |
+                            { ... $XS.$ALLOW(new $ELT[]{..., $ELEM, ...}); ... }
+                        - metavariable-regex:
+                            metavariable: $ELEM
+                            regex: ^(?!("\^?[A-Za-z_]\w*(\\\\)?\.[^|"]*"|[\w.]+\.class)$)
+                - metavariable-regex:
+                    metavariable: $ALLOW
+                    regex: ^(allowTypes|allowTypesByWildcard|allowTypesByRegExp)$

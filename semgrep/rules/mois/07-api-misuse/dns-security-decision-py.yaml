@@ -1,0 +1,59 @@
+rules:
+- id: mois-7-01-dns-security-decision-py
+  languages: [python]
+  severity: WARNING
+  message: "[행안부 API 오용] DNS lookup에 의존한 보안결정: DNS 조회(socket.gethostbyaddr·gethostbyname·getfqdn)로 얻은 호스트 이름·주소로 신뢰 여부를 판단함 — DNS 는 위조될 수 있으니 접속 IP 주소 등 위조하기 어려운 값으로 판단할 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "API 오용"
+    mois-item-no: "7-1"
+    mois-item: "DNS lookup에 의존한 보안결정"
+    cwe: "CWE-247"
+    gate: warn
+  pattern-either:
+    # DNS 조회 결과를 바로 비교
+    - patterns:
+        - pattern-either: &compare
+            - pattern: $N == $OTHER
+            - pattern: $OTHER == $N
+            - pattern: $N != $OTHER
+            - pattern: $OTHER != $N
+            - pattern: $N in $OTHER
+            - pattern: $N not in $OTHER
+            - pattern: re.$REFN($PATTERN, $N, ...)
+            - pattern: fnmatch.fnmatch($N, ...)
+            - patterns:
+                - pattern-either:
+                    - pattern: $N.$CMP(...)
+                    - pattern: $N.lower().$CMP(...)
+                - metavariable-regex:
+                    metavariable: $CMP
+                    regex: ^(endswith|startswith)$
+        - metavariable-pattern:
+            metavariable: $N
+            pattern-either: &lookup
+              - pattern: socket.gethostbyaddr(...)[0]
+              - pattern: socket.getfqdn(...)
+              - pattern: socket.gethostbyname(...)
+              - pattern: socket.gethostbyname_ex(...)[0]
+              - pattern: socket.getnameinfo(...)[0]
+    # 변수에 담아 비교
+    - patterns:
+        - pattern-inside: |
+            $N = $LOOKUP
+            ...
+        - metavariable-pattern:
+            metavariable: $LOOKUP
+            pattern-either: *lookup
+        - pattern-either: *compare
+    # host, aliases, addrs = socket.gethostbyaddr(ip) 로 풀어 담아 비교
+    - patterns:
+        - pattern-either:
+            - pattern-inside: |
+                $N, $ALIASES, $ADDRS = socket.gethostbyaddr(...)
+                ...
+            - pattern-inside: |
+                $N, $PORT = socket.getnameinfo(...)
+                ...
+        - pattern-either: *compare

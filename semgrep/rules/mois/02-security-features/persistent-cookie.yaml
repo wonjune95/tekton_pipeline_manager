@@ -1,0 +1,23 @@
+rules:
+- id: mois-2-12-persistent-cookie
+  languages: [java]
+  severity: WARNING
+  message: "[행안부 보안기능] 사용자 하드디스크에 저장되는 쿠키를 통한 정보 노출: 쿠키 만료시간이 하루를 넘는 영속 쿠키 (만료시간 최소화, 중요정보 저장 금지)"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "보안기능"
+    mois-item-no: "2-12"
+    mois-item: "사용자 하드디스크에 저장되는 쿠키를 통한 정보 노출"
+    cwe: "CWE-539"
+    gate: warn
+  # 진단가이드 예: 60*60*24*365(1년)는 취약, 60*60*24(1일)는 안전
+  pattern-either:
+    - patterns:
+        - pattern: $C.setMaxAge($N)
+        - metavariable-comparison:
+            metavariable: $N
+            comparison: $N > 86400
+    # 무기한 (값을 계산할 수 없는 상수라 따로 적는다)
+    - pattern: $C.setMaxAge(Integer.MAX_VALUE)
+    - pattern: $C.setMaxAge(java.lang.Integer.MAX_VALUE)

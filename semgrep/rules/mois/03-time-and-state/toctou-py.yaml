@@ -1,0 +1,158 @@
+rules:
+- id: mois-3-01-toctou-py
+  languages: [python]
+  severity: WARNING
+  message: "[행안부 시간 및 상태] 경쟁조건: 검사 시점과 사용 시점(TOCTOU): 파일 상태를 검사한 뒤 잠금 없이 같은 파일을 사용하거나, 스레드 함수가 잠금 없이 파일에 씀 — 검사 없이 바로 열고 예외로 처리(try/except, os.makedirs(exist_ok=True), 'x' 모드)하거나 threading.Lock 으로 검사와 사용을 묶을 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "시간 및 상태"
+    mois-item-no: "3-1"
+    mois-item: "경쟁조건: 검사 시점과 사용 시점(TOCTOU)"
+    cwe: "CWE-367"
+    gate: warn
+  pattern-either:
+    # (1)(2) 파일 상태를 검사한 뒤 같은 경로를 열기·삭제·이름 변경·생성.
+    #     `if 검사: ...` 와 그 뒤에 오는 문장 전체를 본다. if 문 안에서 쓰는 경우와, if 로 먼저 빠져나간 뒤
+    #     (if not exists: return) 아래에서 쓰는 경우가 모두 여기에 맞는다 (뒤의 `...` 는 문장 0개에도 맞는다)
+    - patterns:
+        - pattern-either:
+            # (1) os.path.exists()/os.access() 검사 뒤 os·shutil·open 사용
+            - patterns:
+                - pattern-either:
+                    - patterns:
+                        - pattern-inside: |
+                            if <... os.path.$CHECK($P) ...>:
+                                ...
+                            ...
+                        - metavariable-regex:
+                            metavariable: $CHECK
+                            regex: ^(exists|lexists|isfile|isdir|islink)$
+                    - pattern-inside: |
+                        if <... os.access($P, ...) ...>:
+                            ...
+                        ...
+                - pattern-either:
+                    - pattern: open($P, ...)
+                    - patterns:
+                        - pattern: os.$USE($P, ...)
+                        - metavariable-regex:
+                            metavariable: $USE
+                            regex: ^(remove|unlink|rename|replace|rmdir|mkdir|makedirs|chmod|chown|open|truncate)$
+                        - pattern-not: os.makedirs($P, ..., exist_ok=True, ...)
+                    - patterns:
+                        - pattern: shutil.$USE($P, ...)
+                        - metavariable-regex:
+                            metavariable: $USE
+                            regex: ^(rmtree|move|copy|copy2|copyfile)$
+            # (2) pathlib: p.exists()/is_file() 검사 뒤 같은 Path 사용
+            - patterns:
+                - pattern-inside: |
+                    if <... $P.$CHECK() ...>:
+                        ...
+                    ...
+                - metavariable-regex:
+                    metavariable: $CHECK
+                    regex: ^(exists|is_file|is_dir)$
+                - pattern-either:
+                    - pattern: open($P, ...)
+                    - patterns:
+                        - pattern: $P.$USE(...)
+                        - metavariable-regex:
+                            metavariable: $USE
+                            regex: ^(open|unlink|rename|replace|rmdir|mkdir|touch|write_text|write_bytes|read_text|read_bytes)$
+                        - pattern-not: $P.mkdir(..., exist_ok=True, ...)
+                        - pattern-not: $P.unlink(..., missing_ok=True, ...)
+        # 잠금으로 인정하는 것은 "검사(if)까지 잠금 안에 있는" 경우뿐이다.
+        # 검사한 뒤에 잠그거나(검사가 잠금 밖), 사용만 잠금 안에 있으면 탐지한다
+        - pattern-not-inside:
+            patterns:
+              - pattern: |
+                  with $LOCK:
+                      ...
+                      if <... $P ...>:
+                          ...
+                      ...
+              - metavariable-regex:
+                  metavariable: $LOCK
+                  regex: (?i).*(lock|mutex|semaphore)
+        - pattern-not-inside: |
+            $LOCK.acquire(...)
+            ...
+            if <... $P ...>:
+                ...
+        - pattern-not-inside: |
+            fcntl.$FLOCK(...)
+            ...
+            if <... $P ...>:
+                ...
+    # (3) 스레드로 실행하는 함수가 잠금 없이 파일을 쓰기 모드로 엶.
+    #     제외하는 것은 open 이 `with 잠금:` 안에 있거나 open 보다 먼저 acquire() 한 경우뿐이다
+    #     (함수 안 다른 곳에서 다른 값을 지키려고 잡은 잠금은 인정하지 않는다)
+    - patterns:
+        - pattern-either:
+            - patterns:
+                - pattern-inside: |
+                    def $F(...):
+                        ...
+                        with open($P, "$MODE", ...) as $FH:
+                            ...
+                        ...
+                    ...
+                - pattern-not-inside: |
+                    def $F(...):
+                        ...
+                        $LOCK.acquire(...)
+                        ...
+                        with open($P, "$MODE", ...) as $FH:
+                            ...
+                        ...
+                    ...
+                - pattern-not-inside:
+                    patterns:
+                      - pattern: |
+                          def $F(...):
+                              ...
+                              with $LOCK:
+                                  ...
+                                  with open($P, "$MODE", ...) as $FH:
+                                      ...
+                                  ...
+                              ...
+                          ...
+                      - metavariable-regex:
+                          metavariable: $LOCK
+                          regex: (?i).*(lock|mutex|semaphore)
+            - patterns:
+                - pattern-inside: |
+                    def $F(...):
+                        ...
+                        $FH = open($P, "$MODE", ...)
+                        ...
+                    ...
+                - pattern-not-inside: |
+                    def $F(...):
+                        ...
+                        $LOCK.acquire(...)
+                        ...
+                        $FH = open($P, "$MODE", ...)
+                        ...
+                    ...
+                - pattern-not-inside:
+                    patterns:
+                      - pattern: |
+                          def $F(...):
+                              ...
+                              with $LOCK:
+                                  ...
+                                  $FH = open($P, "$MODE", ...)
+                                  ...
+                              ...
+                          ...
+                      - metavariable-regex:
+                          metavariable: $LOCK
+                          regex: (?i).*(lock|mutex|semaphore)
+        - metavariable-regex:
+            metavariable: $MODE
+            regex: ^([wax]|.*\+)
+        - pattern: threading.Thread(..., target=$F, ...)

@@ -1,0 +1,50 @@
+item_no,category,item,cwe,languages,status,rule_ids,note
+1-1,입력데이터 검증 및 표현,SQL 삽입,CWE-89,python,부분,mois-1-01-sql-injection-py,"DB-API cursor execute·executemany·executescript(대상이 DB 커넥션·커서로 보일 때), Django raw·extra(select·where·tables·order_by)·RawSQL, SQLAlchemy text, pandas read_sql·read_sql_query 의 질의문 인자 — 위치 인자와 키워드 인자(sql=·query=·statement= 등) 모두. 바인딩 인자로 넘긴 값은 제외. ORM 필터는 대상 아님. 함수 안 taint 만"
+1-2,입력데이터 검증 및 표현,코드삽입,CWE-94; CWE-95,python,부분,mois-1-02-code-injection-py,"eval·exec·compile·__import__·import_module, Jinja2/Django/Mako 템플릿 원문·render_template_string·from_string — 위치·키워드 인자 모두. 템플릿 변수로 넘긴 값은 제외. 함수 안 taint 만"
+1-3,입력데이터 검증 및 표현,경로 조작 및 자원 삽입,CWE-99; CWE-22,python,부분,mois-1-03-path-traversal-py,open·os.*·shutil.*·send_file·FileResponse·pathlib 읽기/쓰기/삭제. basename·secure_filename·safe_join 과 는 인정. 기준 디렉터리 검사는 is_relative_to·startswith(기준+구분자)·commonpath 를 guard 로 쓸 때만 인정(구분자 없는 startswith·commonprefix 불인정). 함수 안 taint 만
+1-4,입력데이터 검증 및 표현,크로스사이트 스크립트,CWE-79,python,부분,mois-1-04-xss-py,"HttpResponse·Flask Response/make_response·HTMLResponse 본문(text/plain·csv·json·octet-stream·pdf 를 리터럴로 지정한 응답만 제외), mark_safe·Markup, Flask 뷰의 문자열·변수 반환, 라우트 함수의 HTML 문자열 반환. 이스케이프는 옵션(quote=False 등)과 출력 위치(script·href·on…=·따옴표 없는 속성)가 안전할 때만 인정. 템플릿 파일 안의 출력은 미포함. 함수 안 taint 만"
+1-5,입력데이터 검증 및 표현,운영체제 명령어 삽입,CWE-78,python,부분,mois-1-05-os-command-injection-py,"os.system·popen, subprocess 의 명령 인자 전체(shell 여부 무관, 변수에 담은 목록·split·args=·executable=), 셸·sudo·ssh 등 실행기 뒤의 인자, -c 뒤의 값, asyncio subprocess, os.exec*·spawn*. 문자열 리터럴로 시작하는 리스트 리터럴만 제외. shlex.quote 는 '고정 명령 + 리터럴 + shlex.quote(...)' 일 때만 인정. 옵션 삽입(값이 - 로 시작)은 미탐. 함수 안 taint 만"
+1-6,입력데이터 검증 및 표현,위험한 형식 파일 업로드,CWE-434,,제외,,Semgrep 으로 판단할 수 없어 규칙을 두지 않음 — 수동 점검. 업로드 제한(확장자·크기·저장 위치)이 있는지는 다른 함수·설정·폼 검증에 있어 Semgrep 이 판단할 수 없음
+1-7,입력데이터 검증 및 표현,신뢰되지 않는 URL 주소로 자동접속 연결,CWE-601,python,부분,mois-1-07-open-redirect-py; mois-1-07-open-redirect-path-py,"Django·Flask redirect, HttpResponseRedirect, RedirectResponse, Location 헤더. 고정 상대경로 접두·reverse·url_for 결과·url_has_allowed_host_and_scheme guard·리터럴 허용 목록은 인정. urlsplit(...).netloc 만 보는 검사는 ///host 우회가 있어 불인정. request.path 계열로 만든 리다이렉트는 warn 규칙(open-redirect-path)이 따로 보고. 함수 안 taint 만"
+1-8,입력데이터 검증 및 표현,부적절한 XML 외부개체 참조,CWE-611,python,부분,mois-1-08-xxe-py,"lxml: resolve_entities=False 없는 XMLParser·iterparse, 파서 미지정 fromstring·parse. xml.sax 외부 엔티티 feature 를 켠 경우, xmltodict disable_entities=False. 표준 xml.etree·minidom 은 외부 엔티티를 읽지 않아 대상 아님. 입력의 흐름은 보지 않는 설정 점검이라 warn"
+1-9,입력데이터 검증 및 표현,XML 삽입,CWE-652; CWE-643,python,부분,mois-1-09-xpath-injection-py,"lxml xpath()·etree.XPath·elementpath.select 의 질의문(XPath 변수로 넘긴 값 제외), ElementTree find 계열에 XPath 모양 문자열. re.fullmatch·isalnum 검증은 guard(실패하면 빠져나가는 if 문 뒤, 또는 통과한 if 안)로 쓸 때만 인정. 함수 안 taint 만"
+1-10,입력데이터 검증 및 표현,LDAP 삽입,CWE-90,python,부분,mois-1-10-ldap-injection-py,"python-ldap search*(필터·기준 DN), ldap3 search(search_filter·search_base). escape_filter_chars·filter_format·escape_dn_chars 는 정화. bind DN 미포함. 함수 안 taint 만"
+1-11,입력데이터 검증 및 표현,크로스사이트 요청 위조,CWE-352,python,부분,mois-1-11-csrf-py,"Django csrf_exempt, MIDDLEWARE 에 CsrfViewMiddleware 없음, Flask-WTF WTF_CSRF_ENABLED=False·csrf.exempt. 직접 만든 토큰 비교와 FastAPI 쿠키 인증의 CSRF 보호 유무는 판정 못 함"
+1-12,입력데이터 검증 및 표현,서버사이드 요청 위조,CWE-918,python,부분,mois-1-12-ssrf-py,"requests·httpx·urllib·urllib3·aiohttp 의 URL 인자(위치·url= 키워드), 같은 함수에서 만든 Session·Client 의 요청. 스킴·호스트를 고정한 리터럴로 시작하는 연결·format·f-string 과 리터럴 허용 목록 guard 는 인정(리터럴을 replace·슬라이스로 고친 식, int() 로 바꾼 호스트·포트는 불인정). 함수 안 taint 만"
+1-13,입력데이터 검증 및 표현,HTTP 응답분할,CWE-113,python,부분,mois-1-13-http-response-splitting-py,응답 헤더 대입·headers.add/set·set_cookie 값·응답 생성자 headers. 최신 Django·Werkzeug·Starlette 는 헤더의 개행을 실행 중 거부하므로 warn. 함수 안 taint 만
+1-14,입력데이터 검증 및 표현,정수형 오버플로우,CWE-190,python,부분,mois-1-14-integer-overflow-py,Python 정수는 넘치지 않으므로 고정 폭 변환(numpy·ctypes·struct.pack)과 크기 사용(bytearray·반복·numpy.zeros·read(n))에 범위 검사 없는 외부 입력 수만 봄. 일반 산술·range 는 대상 아님
+1-15,입력데이터 검증 및 표현,보안기능 결정에 사용되는 부적절한 입력값,CWE-807,,제외,,Semgrep 으로 판단할 수 없어 규칙을 두지 않음 — 수동 점검. 어떤 값이 보안 결정에 쓰이는지는 이름으로만 추정할 수 있음
+1-16,입력데이터 검증 및 표현,메모리 버퍼 오버플로우,CWE-119,,해당 없음,,C 언어 전용 항목 (KISA Python 시큐어코딩 가이드에도 없음)
+1-17,입력데이터 검증 및 표현,포맷 스트링 삽입,CWE-134,python,부분,mois-1-17-format-string-py,"외부 입력이 형식 문자열 자리에 오는 .format()·%·인자가 있는 logging 메시지. ""상수"".format(입력) 은 제외. 함수 안 taint 만"
+2-1,보안기능,적절한 인증 없는 중요기능 허용,CWE-306,,제외,,"Semgrep 으로 판단할 수 없어 규칙을 두지 않음 — 수동 점검. 인증이 필요한 기능인지, 인증이 다른 계층(필터·미들웨어·게이트웨이)에 있는지 판단할 수 없음"
+2-2,보안기능,부적절한 인가,CWE-285,,제외,,"Semgrep 으로 판단할 수 없어 규칙을 두지 않음 — 수동 점검. 권한 검사가 필요한지, 다른 계층에 있는지 판단할 수 없음"
+2-3,보안기능,중요한 자원에 대한 잘못된 권한 설정,CWE-732,python,부분,mois-2-03-insecure-permission-py,"os.chmod·os.open·mkdir·pathlib chmod 의 others 쓰기 모드 상수, os.umask(0), 셸 chmod 777. 변수 모드는 놓침. 중요 자원 여부는 수동 확인"
+2-4,보안기능,취약한 암호화 알고리즘 사용,CWE-327,python,부분,mois-2-04-weak-cipher-py; mois-2-04-weak-hash-py,"cipher: PyCryptodome·cryptography 의 DES·3DES·RC2·RC4·Blowfish·ECB. hash: hashlib·hmac·PyCryptodome·cryptography 의 MD5·SHA-1, Django MD5·SHA1 해셔(usedforsecurity=False 제외). 알고리즘을 변수로 고르면 놓침"
+2-5,보안기능,암호화되지 않은 중요정보,CWE-312; CWE-319,python,부분,mois-2-05-cleartext-transport-py,"평문 전송만 탐지: http:// 상수 URL, TLS 없는 smtplib·ftplib·telnetlib (무엇을 보내는지는 보지 않음 → warn). 중요정보의 평문 저장은 값이 중요정보인지 이름으로만 추정할 수 있어 규칙을 두지 않음 — 수동 점검"
+2-6,보안기능,하드코드된 중요정보,CWE-259; CWE-321,python,부분,mois-2-06-hardcoded-secret-py,"이름이 password·secret·api_key·token 등인 변수·dict 키·키워드 인자의 문자열 상수, getenv 기본값, jwt 서명키 상수, 접속 URL 의 계정:비밀번호. 이름 규칙이라 오탐·미탐 가능"
+2-7,보안기능,충분하지 않은 키 길이 사용,CWE-326,python,부분,mois-2-07-insufficient-key-length-py,"cryptography·PyCryptodome·pyOpenSSL·paramiko 의 RSA·DSA·DH 2048 미만, EC 224 이하 곡선, 대칭키 128비트 미만. 상수 값만"
+2-8,보안기능,적절하지 않은 난수 값 사용,CWE-330,,제외,,Semgrep 으로 판단할 수 없어 규칙을 두지 않음 — 수동 점검. 난수가 보안 용도(토큰·OTP·세션)인지 판단할 수 없음
+2-9,보안기능,취약한 비밀번호 허용,CWE-521,,제외,,Semgrep 으로 판단할 수 없어 규칙을 두지 않음 — 수동 점검. 비밀번호 정책 검사가 다른 계층(폼·시리얼라이저·설정)에 있는지 판단할 수 없음
+2-10,보안기능,부적절한 전자서명 확인,CWE-347,python,부분,mois-2-10-improper-signature-verification-py,"jwt.decode verify=False·verify_signature False·algorithms none, python-jose get_unverified_claims, 서명 검증 예외를 pass 로 무시, hmac.compare_digest 결과 버림"
+2-11,보안기능,부적절한 인증서 유효성 검증,CWE-295,python,부분,mois-2-11-improper-cert-validation-py,"requests·httpx·boto3 verify=False, aiohttp ssl=False, ssl._create_unverified_context, CERT_NONE, check_hostname=False, urllib3 cert_reqs, ldap OPT_X_TLS_NEVER. 환경변수·설정으로 끄는 경우는 놓침"
+2-12,보안기능,사용자 하드디스크에 저장되는 쿠키를 통한 정보 노출,CWE-539,python,부분,mois-2-12-persistent-cookie-py,set_cookie max_age·session.set_expiry·SESSION_COOKIE_AGE·PERMANENT_SESSION_LIFETIME 가 하루(86400초) 초과. 상수만. 쿠키 값의 중요정보 여부는 수동 확인
+2-13,보안기능,주석문 안에 포함된 시스템 주요정보,CWE-615,python,점검보조,mois-2-13-sensitive-comment-py,# 주석의 비밀번호=값·root / 값 형태(숫자·특수문자 또는 따옴표 값만). docstring 은 보지 않음
+2-14,보안기능,솔트 없이 일방향 해쉬 함수 사용,CWE-759,,제외,,"Semgrep 으로 판단할 수 없어 규칙을 두지 않음 — 수동 점검. 해시 대상이 비밀번호인지, 솔트가 다른 곳에서 붙는지 이름으로만 추정할 수 있음"
+2-15,보안기능,무결성 검사 없는 코드 다운로드,CWE-494,,제외,,Semgrep 으로 판단할 수 없어 규칙을 두지 않음 — 수동 점검. 다운로드한 코드의 무결성 검사가 다른 함수에 있는지 판단할 수 없음
+2-16,보안기능,반복된 인증시도 제한 기능 부재,CWE-307,,제외,,Semgrep 으로 판단할 수 없어 규칙을 두지 않음 — 수동 점검. 인증 시도 제한은 보통 다른 계층(필터·라이브러리·게이트웨이)에 있어 판단할 수 없음
+3-1,시간 및 상태,경쟁조건: 검사 시점과 사용 시점(TOCTOU),CWE-367,python,점검보조,mois-3-01-toctou-py,"os.path.exists·isfile·os.access·pathlib exists() 로 검사한 if 문 안에서 같은 경로를 열기·삭제·이름 변경, 잠금 없는 Thread 쓰기. 실제 동시 접근 여부는 수동 확인"
+3-2,시간 및 상태,종료되지 않는 반복문 또는 재귀 함수,CWE-674; CWE-835,python,부분,mois-3-02-infinite-loop-recursion-py,"빠져나오는 문장이 없는 while True, 제어문 없는 자기 호출. 예외로만 빠져나오는 반복문은 오탐, 간접 재귀는 미탐"
+4-1,에러처리,오류 메시지 정보노출,CWE-209,python,점검보조,mois-4-01-error-message-exposure-py,"traceback.print_exc 계열, format_exc()·잡은 예외를 응답으로 내보냄, DEBUG=True·app.run(debug=True)·FastAPI(debug=True). 내용의 민감도는 수동 판단"
+4-2,에러처리,오류상황 대응 부재,CWE-390,python,부분,mois-4-02-empty-catch-py,except 절 본문이 pass·continue·... 한 줄뿐인 경우. return None 만 있는 경우와 contextlib.suppress 는 미탐
+4-3,에러처리,부적절한 예외 처리,CWE-754,python,부분,mois-4-03-improper-exception-handling-py,except:·Exception·BaseException 절에 raise 가 없는 경우. 기록 후 오류 응답만 돌려주는 최상위 처리기도 탐지됨. 반환값 무시는 Python 에 해당 적어 제외
+5-1,코드오류,Null Pointer 역참조,CWE-476,python,부분,mois-5-01-null-dereference-py,re.match/search·기본값 없는 dict.get·os.environ.get·ORM first()·find() 결과를 검사 없이 역참조. cursor.fetchone()·함수 간 흐름은 미탐
+5-2,코드오류,부적절한 자원 해제,CWE-404,python,부분,mois-5-02-resource-leak-py,함수 안에서 open·socket·urlopen·DB connect 를 지역 변수로 열고 with·finally close() 가 없음. 반환·필드 저장은 제외. DB 커서·ORM 세션은 미포함
+5-3,코드오류,해제된 자원 사용,CWE-416,,해당 없음,,C 언어 전용 항목 (KISA Python 시큐어코딩 가이드에도 없음)
+5-4,코드오류,초기화되지 않은 변수 사용,CWE-457,,해당 없음,,C 언어 전용 항목 (KISA Python 시큐어코딩 가이드에도 없음)
+5-5,코드오류,신뢰할 수 없는 데이터의 역직렬화,CWE-502,python,부분,mois-5-05-insecure-deserialization-py; mois-5-05-unsafe-deserializer-py,"요청 값이 pickle·dill·marshal·jsonpickle·shelve·yaml.load·torch.load·joblib·numpy.load 로 흐름(block, 키워드 인자 포함). SafeLoader·BaseLoader 로 확인되지 않는 yaml.load·full_load, weights_only=True 가 아닌 torch.load, allow_pickle 이 False 로 확인되지 않는 numpy.load(warn)"
+6-1,캡슐화,잘못된 세션에 의한 데이터 정보 노출,CWE-488; CWE-543,python,부분,mois-6-01-shared-field-in-singleton-py,"요청 처리 함수의 global 변수 대입, 뷰 클래스의 클래스 속성(list·dict·set) 변경. global 선언 없이 모듈 dict 를 바꾸는 경우는 미탐"
+6-2,캡슐화,제거되지 않고 남은 디버그 코드,CWE-489,python,점검보조,mois-6-02-debug-code-py,"pdb·ipdb import/set_trace, breakpoint(), print()(명령행 스크립트·__main__ 블록 제외), 웹 모듈의 시험용 __main__ 블록. 디버그 여부는 수동 확인"
+6-3,캡슐화,Public 메소드부터 반환된 Private 배열,CWE-495,python,부분,mois-6-03-private-array-returned-py,컬렉션으로 초기화된 _·__ 속성을 공개 메서드·프로퍼티가 그대로 반환. 얕은 복사는 미탐
+6-4,캡슐화,Private 배열에 Public 데이터 할당,CWE-496,python,부분,mois-6-04-public-data-to-private-array-py,컬렉션 타입의 _·__ 속성에 공개 메서드·생성자 인자를 그대로 저장. 타입 힌트 없는 생성자 인자는 미탐
+7-1,API 오용,DNS lookup에 의존한 보안결정,CWE-247,python,부분,mois-7-01-dns-security-decision-py,socket.gethostbyaddr·getfqdn·gethostbyname·getnameinfo 결과를 비교해 신뢰 여부를 판단. 함수 간 전달은 미탐
+7-2,API 오용,취약한 API 사용,CWE-676; CWE-242; CWE-246; CWE-382,python,부분,mois-7-02-dangerous-api-py,"요청 처리 함수의 sys.exit·os._exit, 소켓 직접 생성, tempfile.mktemp, 인증·권한을 검사하는 assert"

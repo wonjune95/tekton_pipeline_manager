@@ -1,0 +1,79 @@
+rules:
+- id: mois-5-01-null-dereference-js
+  languages: [javascript, typescript]
+  severity: WARNING
+  message: "[행안부 코드오류] Null Pointer 역참조: 일치하지 않으면 null 을 돌려주는 정규식 결과(String.match·RegExp.exec)를 검사 없이 사용함 — 일치하지 않는 입력이면 TypeError 로 처리가 중단되니 결과가 null 인지 먼저 확인하거나 옵셔널 체이닝(m?.[1])·기본값을 쓸 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "코드오류"
+    mois-item-no: "5-1"
+    mois-item: "Null Pointer 역참조"
+    cwe: "CWE-476"
+    gate: warn
+  # "빠져나간 if 문 뒤" 형태가 if 의 마지막 문장이 return·throw 일 때만 맞도록 한다 (안쪽 조건부 return 은 중단이 아니다)
+  options:
+    go_deeper_stmt: false
+  patterns:
+    - pattern-either:
+        # (1) 결과를 바로 역참조: s.match(/x(\d+)/)[1], re.exec(s).index
+        - patterns:
+            - pattern-either:
+                - pattern: $S.match($RE)[$I]
+                - patterns:
+                    - pattern: $S.match($RE).$A
+                    - metavariable-regex: &prop
+                        metavariable: $A
+                        regex: ^(index|input|groups|length|slice|map|join|filter|forEach|shift|pop)$
+            - metavariable-regex: &regexarg
+                metavariable: $RE
+                regex: ^(/.*/[a-z]*|new RegExp\(.*\)|RegExp\(.*\))$
+        - pattern: $RE.exec($S)[$I]
+        - patterns:
+            - pattern: $RE.exec($S).$A
+            - metavariable-regex: *prop
+        # (2) 변수에 담은 뒤 검사 없이 역참조
+        - patterns:
+            - pattern-either:
+                - patterns:
+                    - pattern-inside: |
+                        $M = $S.match($RE);
+                        ...
+                    - metavariable-regex: *regexarg
+                - pattern-inside: |
+                    $M = $RE.exec($S);
+                    ...
+            - pattern-either:
+                - pattern: $M[$I]
+                - patterns:
+                    - pattern: $M.$A
+                    - metavariable-regex: *prop
+            # 조건 안에서 사용: if (m) …, if (m && m[1]), m ? m[1] : d, m && m[1]
+            - pattern-not-inside: if (<... $M ...>) $BODY
+            - pattern-not-inside: '<... $M ...> ? $Y : $N'
+            - pattern-not-inside: <... $M ...> && $Y
+            # 같은 정규식·같은 문자열로 test() 한 if 안: if (re.test(s)) { const m = re.exec(s); m[1] }
+            - pattern-not-inside: if (<... $RE.test($S) ...>) $BODY
+            # 검사에 실패하면 빠져나감: if (!m) return; 뒤
+            - pattern-not-inside: |
+                if (<... $M ...>) { ... return ...; }
+                ...
+            - pattern-not-inside: |
+                if (<... $M ...>) return ...;
+                ...
+            - pattern-not-inside: |
+                if (<... $M ...>) { ... throw $X; }
+                ...
+            - pattern-not-inside: |
+                if (<... $M ...>) throw $X;
+                ...
+            - pattern-not-inside: |
+                if (<... $M ...>) { ... continue; }
+                ...
+            - pattern-not-inside: |
+                if (<... $M ...>) continue;
+                ...
+    # match 는 정규식(리터럴·new RegExp)을 받을 때만 String.prototype.match 로 본다 (micromatch.match(list, glob) 등은 배열을 돌려준다).
+    # 결과의 속성은 배열 요소·index·input·groups·배열 메서드만 본다 (Mongoose query.exec().then 처럼 다른 API 의 exec 를 빼기 위해)
+    # 옵셔널 체이닝(s.match(re)?.[1], m?.index)은 null 이면 undefined 가 된다. Semgrep 패턴이 ?. 와 . 을 구분하지 않아 원문으로 뺀다
+    - pattern-not-regex: \?\.

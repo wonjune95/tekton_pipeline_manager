@@ -1,0 +1,44 @@
+rules:
+- id: mois-2-11-improper-cert-validation
+  languages: [java]
+  severity: ERROR
+  message: "[행안부 보안기능] 부적절한 인증서 유효성 검증: 서버 인증서나 호스트 이름을 검증하지 않고 모두 신뢰함 — 기본 TrustManager·HostnameVerifier 를 쓰고, 사설 인증서는 신뢰 저장소에 등록할 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "보안기능"
+    mois-item-no: "2-11"
+    mois-item: "부적절한 인증서 유효성 검증"
+    cwe: "CWE-295"
+    gate: block
+  pattern-either:
+    # 아무 검사도 하지 않는 X509TrustManager
+    # (throws 절이 있는 선언에도 맞는다)
+    - pattern: |
+        void checkServerTrusted(...) { }
+    # 모든 호스트 이름을 통과시키는 HostnameVerifier
+    - pattern: |
+        boolean verify(String $H, javax.net.ssl.SSLSession $S) { return true; }
+    # (타입을 적은 람다 (String h, SSLSession s) -> true 에도 맞는다)
+    - patterns:
+        - pattern: $X.$SETTER(($H, $S) -> true)
+        - metavariable-regex:
+            metavariable: $SETTER
+            regex: (?i)^(set)?(default)?hostnameverifier$
+    - pattern: org.apache.http.conn.ssl.NoopHostnameVerifier.INSTANCE
+    - pattern: new org.apache.http.conn.ssl.NoopHostnameVerifier()
+    - pattern: org.apache.hc.client5.http.ssl.NoopHostnameVerifier.INSTANCE
+    - pattern: new org.apache.hc.client5.http.ssl.NoopHostnameVerifier()
+    - pattern: org.apache.http.conn.ssl.SSLConnectionSocketFactory.ALLOW_ALL_HOSTNAME_VERIFIER
+    - pattern: new org.apache.http.conn.ssl.AllowAllHostnameVerifier()
+    # 모든 인증서 또는 자체 서명 인증서를 신뢰 (진단가이드 C 예: 자체 서명 인증서 허용)
+    - pattern: org.apache.http.conn.ssl.TrustAllStrategy.INSTANCE
+    - pattern: new org.apache.http.conn.ssl.TrustAllStrategy()
+    - pattern: org.apache.http.conn.ssl.TrustSelfSignedStrategy.INSTANCE
+    - pattern: new org.apache.http.conn.ssl.TrustSelfSignedStrategy()
+    - pattern: org.apache.hc.client5.http.ssl.TrustAllStrategy.INSTANCE
+    - pattern: new org.apache.hc.client5.http.ssl.TrustAllStrategy()
+    - pattern: org.apache.hc.client5.http.ssl.TrustSelfSignedStrategy.INSTANCE
+    - pattern: new org.apache.hc.client5.http.ssl.TrustSelfSignedStrategy()
+    # loadTrustMaterial(trustStore, strategy) 와 loadTrustMaterial(strategy) 모두
+    - pattern: $B.loadTrustMaterial(..., ($CHAIN, $AUTH) -> true)

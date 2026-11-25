@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="egovframework.member.service.impl.MemberMapper">
+  <!-- 외부 입력이 ${} 로 질의문에 그대로 치환됨 -->
+  <select id="selectMemberByName" parameterType="string" resultType="memberVO">
+    <!-- ruleid: mois-1-01-sql-injection-mybatis -->
+    SELECT member_id, member_nm FROM tb_member WHERE member_nm = '${memberNm}'
+  </select>
+  <select id="selectMemberList" parameterType="searchVO" resultType="memberVO">
+    SELECT member_id, member_nm FROM tb_member
+    <where>
+      <!-- ruleid: mois-1-01-sql-injection-mybatis -->
+      <if test="searchKeyword != null">AND member_nm LIKE '%${searchKeyword}%'</if>
+      <!-- ruleid: mois-1-01-sql-injection-mybatis -->
+      <foreach collection="deptIds" item="deptId" open="AND dept_id IN (" separator="," close=")">${deptId}</foreach>
+    </where>
+    <!-- 정렬 기준·방향: 한 줄에 두 번 -->
+    <!-- ruleid: mois-1-01-sql-injection-mybatis -->
+    ORDER BY ${sortColumn} ${sortOrder}
+  </select>
+  <!-- 테이블 이름, 그리고 #{} 와 섞어 쓴 경우 -->
+  <update id="updateMemberName" parameterType="map">
+    <!-- ruleid: mois-1-01-sql-injection-mybatis -->
+    UPDATE ${tableName} SET member_nm = #{memberNm} WHERE member_id = #{memberId}
+  </update>
+  <!-- 주석 사이에 있는 것은 주석이 아니다 -->
+  <!-- ruleid: mois-1-01-sql-injection-mybatis -->
+  <delete id="deleteMember">DELETE FROM tb_member <!-- 조건 --> WHERE member_id = ${memberId} <!-- 끝 --></delete>
+</mapper>

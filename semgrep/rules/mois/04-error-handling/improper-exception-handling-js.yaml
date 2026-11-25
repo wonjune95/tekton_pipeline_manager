@@ -1,0 +1,33 @@
+rules:
+- id: mois-4-03-improper-exception-handling-js
+  languages: [javascript, typescript]
+  severity: WARNING
+  message: "[행안부 에러처리] 부적절한 예외 처리: fs 비동기 함수의 콜백이 오류 인자를 받지 않거나 확인하지 않음 — 실패(파일 없음·권한 없음 등)를 알 수 없으니 콜백의 err 를 검사해 처리하거나 fs.promises 와 try/catch 를 쓸 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "에러처리"
+    mois-item-no: "4-3"
+    mois-item: "부적절한 예외 처리"
+    cwe: "CWE-754"
+    gate: warn
+  # JS 의 catch 는 언제나 모든 오류를 잡으므로 Java·Python 의 "광범위한 예외 타입" 형태는 없다.
+  # Java 규칙의 "실패를 알리는 반환값(File.delete) 무시" 에 해당하는, fs 오류 우선 콜백의 err 무시만 잡는다.
+  # fs 는 require·import 로 확인한다 (import { unlink } from 'fs' 처럼 이름만 가져온 호출도 맞는다).
+  # ponytail: node:fs 로 가져온 경우는 못 본다 (Semgrep 이 'node:fs' 를 fs 로 풀지 않음)
+  patterns:
+    - pattern-either:
+        # 콜백이 매개변수를 하나도 받지 않음: fs.unlink(p, () => {})
+        - pattern: fs.$M(..., () => $BODY)
+        - pattern: fs.$M(..., function () { ... })
+        # 첫 매개변수(err)를 받지만 본문에서 쓰지 않음
+        - patterns:
+            - pattern-either:
+                - pattern: fs.$M(..., ($ERR, ...) => { ... })
+                - pattern: fs.$M(..., function ($ERR, ...) { ... })
+            - pattern-not: fs.$M(..., ($ERR, ...) => { ... <... $ERR ...>; ... })
+            - pattern-not: fs.$M(..., function ($ERR, ...) { ... <... $ERR ...>; ... })
+    # 콜백의 첫 인자가 오류가 아닌 함수(fs.exists 의 존재 여부, watch·watchFile 의 이벤트)는 제외
+    - metavariable-regex:
+        metavariable: $M
+        regex: ^(?!(exists|watch|watchFile|unwatchFile)$)[a-z]\w*$

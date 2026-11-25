@@ -1,0 +1,28 @@
+rules:
+- id: mois-6-02-debug-code-js
+  languages: [javascript, typescript]
+  severity: WARNING
+  message: "[행안부 캡슐화] 제거되지 않고 남은 디버그 코드: debugger 문이나 console.log·debug·dir·table 출력이 남아 있음 — 배포 전에 지우고, 필요한 기록은 로거(winston·pino 등)로 수준을 나눠 남길 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "캡슐화"
+    mois-item-no: "6-2"
+    mois-item: "제거되지 않고 남은 디버그 코드"
+    cwe: "CWE-489"
+    gate: warn
+  # 참고: semgrep-rules javascript/lang/best-practice/leftover_debugging.yaml
+  pattern-either:
+    # 디버거 중단점
+    - pattern: debugger;
+    # 콘솔 출력 — console.error·warn 은 오류 기록으로 보고, console.trace 는 4-1(오류 메시지 정보노출)에서 다룬다.
+    # 명령행 스크립트(#! 로 시작하는 파일, require.main === module 블록)의 출력은 정상 출력으로 본다
+    - patterns:
+        - pattern: console.$LOG(...)
+        - metavariable-regex:
+            metavariable: $LOG
+            regex: ^(log|debug|dir|dirxml|table|info)$
+        - pattern-not-inside: |
+            if (require.main === module) { ... }
+        - pattern-not-inside:
+            pattern-regex: (?s)\A#!.*\z

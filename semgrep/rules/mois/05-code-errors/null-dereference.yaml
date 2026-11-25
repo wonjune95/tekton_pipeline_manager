@@ -1,0 +1,257 @@
+rules:
+- id: mois-5-01-null-dereference
+  languages: [java]
+  severity: WARNING
+  message: "[행안부 코드오류] Null Pointer 역참조: null 일 수 있는 참조를 검사 없이(또는 검사 순서가 잘못된 채) 사용함 — 사용하기 전에 null 여부를 먼저 확인할 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "코드오류"
+    mois-item-no: "5-1"
+    mois-item: "Null Pointer 역참조"
+    cwe: "CWE-476"
+    gate: warn
+  # guard 판정을 엄격하게 (docs/rule-conventions.md 1절 v2): `{ ... return ...; }` 가 분기의 마지막 문장일 때만 "중단"으로 맞는다.
+  # 기본값이면 분기 안쪽의 조건부 return 까지 중단으로 맞아 버린다
+  options:
+    go_deeper_stmt: false
+  pattern-either:
+    # null 로 확인된 분기(== null 의 then, != null 의 else) 안에서 다시 대입하지 않고 사용
+    - patterns:
+        - pattern-either:
+            - pattern-inside:
+                patterns:
+                  - pattern-either:
+                      - pattern: if ($X == null) $THEN;
+                      - pattern: if (null == $X) $THEN;
+                  - focus-metavariable: $THEN
+            - pattern-inside:
+                patterns:
+                  - pattern-either:
+                      - pattern: if ($X != null) $THEN; else $ELSE;
+                      - pattern: if (null != $X) $THEN; else $ELSE;
+                  - focus-metavariable: $ELSE
+        - pattern: $X.$M(...)
+        - pattern-not-inside: |
+            $X = $V;
+            ...
+    # 조건식 안에서 null 검사보다 먼저 사용하거나, null 일 때 사용
+    - patterns:
+        - pattern-either:
+            - pattern: <... $X.$M(...) ...> || <... $X == null ...>
+            - pattern: <... $X.$M(...) ...> || <... null == $X ...>
+            - pattern: <... $X.$M(...) ...> && <... $X != null ...>
+            - pattern: <... $X.$M(...) ...> && <... null != $X ...>
+            - pattern: $X == null && <... $X.$M(...) ...>
+            - pattern: null == $X && <... $X.$M(...) ...>
+            - pattern: $X != null || <... $X.$M(...) ...>
+            - pattern: null != $X || <... $X.$M(...) ...>
+            - pattern: ($X == null && $Y) || <... $X.$M(...) ...>
+            - pattern: (null == $X && $Y) || <... $X.$M(...) ...>
+        # 진단가이드 안전한 코드: (null == obj && null == elt) || (null != obj && obj.equals(elt))
+        - pattern-not: ($X == null && $Y) || ($X != null && $Z)
+        - pattern-not: (null == $X && $Y) || (null != $X && $Z)
+    # null 을 돌려줄 수 있는 값(요청 파라미터·헤더, 시스템 속성·환경변수)을 검사 없이 사용.
+    # `$X = ...;` 는 선언문(`String x = ...;`)과 대입문 모두에 맞는다
+    - patterns:
+        - pattern-either:
+            - patterns:
+                - pattern-inside: |
+                    $X = $REQ.$GET($ARG);
+                    ...
+                - metavariable-regex:
+                    metavariable: $GET
+                    regex: ^(getParameter|getHeader)$
+                # 그 뒤에 다른 값으로 다시 대입했으면 더 이상 이 값이 아니다 (같은 줄의 대입문인지는 $REQ·$ARG 로 묶는다)
+                - pattern-not-inside: |
+                    $X = $REQ.$GET($ARG);
+                    ...
+                    $X = $OTHER;
+                    ...
+            - patterns:
+                - pattern-inside: |
+                    $X = System.$GET($KEY);
+                    ...
+                - metavariable-regex:
+                    metavariable: $GET
+                    regex: ^(getProperty|getenv)$
+                - pattern-not-inside: |
+                    $X = System.$GET($KEY);
+                    ...
+                    $X = $OTHER;
+                    ...
+        - pattern: $X.$M(...)
+        # ── 아래는 "null 이 아님이 확인된 자리"만 제외한다 (docs/rule-conventions.md 1절: 검사가 있다는 것만으로는 제외하지 않음) ──
+        # (1) null 이 아닐 때만 실행되는 분기: `if (x != null && ...) { 여기 }`
+        #     검사식을 감싸는 식은 && 뿐이어야 한다 (||·|·^·?:·!(…)·== false 등에 묶이면 null 이어도 들어온다).
+        #     $WRAP 은 검사식을 품은 모든 식(검사식 자신 포함)에 맞는다
+        - pattern-not-inside:
+            patterns:
+              - pattern: if ($COND) $S1;
+              - metavariable-pattern:
+                  metavariable: $COND
+                  patterns:
+                    - pattern-either:
+                        - pattern: $X != null
+                        - pattern: null != $X
+                    - pattern-not-inside:
+                        patterns:
+                          - pattern: $WRAP
+                          - pattern-not: $AND1 && $AND2
+                          - pattern-not: $X != null
+                          - pattern-not: null != $X
+              - focus-metavariable: $S1
+        # (2) `if (x == null || ...) { ... } else { 여기 }` — 검사식을 감싸는 식은 || 뿐이어야 한다 (&&·&·^·?:·!(…) 등은 인정하지 않는다)
+        - pattern-not-inside:
+            patterns:
+              - pattern: if ($COND) $S1; else $S2;
+              - metavariable-pattern:
+                  metavariable: $COND
+                  patterns:
+                    - pattern-either:
+                        - pattern: $X == null
+                        - pattern: null == $X
+                    - pattern-not-inside:
+                        patterns:
+                          - pattern: $WRAP
+                          - pattern-not: $OR1 || $OR2
+                          - pattern-not: $X == null
+                          - pattern-not: null == $X
+              - focus-metavariable: $S2
+        # (3) 단락 평가·조건식에서 null 이 아닐 때만 평가되는 쪽
+        - pattern-not-inside: $X != null && $G1
+        - pattern-not-inside: null != $X && $G1
+        - pattern-not-inside: $X == null || $G2
+        - pattern-not-inside: null == $X || $G2
+        - pattern-not-inside:
+            patterns:
+              - pattern-either:
+                  - pattern: "$X != null ? $G3 : $G4"
+                  - pattern: "null != $X ? $G3 : $G4"
+              - focus-metavariable: $G3
+        - pattern-not-inside:
+            patterns:
+              - pattern-either:
+                  - pattern: "$X == null ? $G3 : $G4"
+                  - pattern: "null == $X ? $G3 : $G4"
+              - focus-metavariable: $G4
+        # (4) 실패 시 중단: null(또는 빈 값)이면 return·throw·continue·break 하거나 기본값을 대입하는 if 문 "뒤"의 사용.
+        #     if 문 안(실패 분기)에서의 사용, 검사 뒤에 다시 대입한 경우, || 가 아닌 식(&&·&·^·?:·!(…)·== false 등)에 묶인 검사는 인정하지 않는다.
+        #     `x == null || x.isEmpty()` 처럼 `||` 로 묶인 검사는 인정한다
+        - pattern-not:
+            patterns:
+              - pattern-either:
+                  - pattern-inside: |
+                      if ($COND) { ... return ...; }
+                      ...
+                  - pattern-inside: |
+                      if ($COND) { ... throw ...; }
+                      ...
+                  - pattern-inside: |
+                      if ($COND) { ... continue; }
+                      ...
+                  - pattern-inside: |
+                      if ($COND) { ... break; }
+                      ...
+                  - pattern-inside: |
+                      if ($COND) { ... $X = $DEFAULT; }
+                      ...
+                  - pattern-inside: |
+                      if ($COND) return ...;
+                      ...
+                  - pattern-inside: |
+                      if ($COND) throw ...;
+                      ...
+                  - pattern-inside: |
+                      if ($COND) continue;
+                      ...
+                  - pattern-inside: |
+                      if ($COND) break;
+                      ...
+                  - pattern-inside: |
+                      if ($COND) $X = $DEFAULT;
+                      ...
+              - metavariable-pattern:
+                  metavariable: $COND
+                  patterns:
+                    - pattern-either:
+                        - pattern: $X == null
+                        - pattern: null == $X
+                        # 문자열 유틸리티: 비었으면(null 포함) 참
+                        - patterns:
+                            - pattern: $UTIL.$EMPTY($X)
+                            - metavariable-regex:
+                                metavariable: $EMPTY
+                                regex: ^(isEmpty|isBlank|isNull|isNullOrEmpty)$
+                        - patterns:
+                            - pattern: "!$UTIL.$HAS($X)"
+                            - metavariable-regex:
+                                metavariable: $HAS
+                                regex: ^(hasText|hasLength|isNotEmpty|isNotBlank|nonNull)$
+                    # $WRAP(검사식을 품은 식)이 || 도 아니고 검사식 자체도 아니면 인정하지 않는다 (부정·&&·&·?: 등)
+                    - pattern-not-inside:
+                        patterns:
+                          - pattern: $WRAP
+                          - pattern-not: $OR1 || $OR2
+                          - pattern-not: $X == null
+                          - pattern-not: null == $X
+                          - pattern-not:
+                              patterns:
+                                - pattern: $UTIL.$EMPTY($X)
+                                - metavariable-regex:
+                                    metavariable: $EMPTY
+                                    regex: ^(isEmpty|isBlank|isNull|isNullOrEmpty)$
+                          - pattern-not:
+                              patterns:
+                                - pattern: "!$UTIL.$HAS($X)"
+                                - metavariable-regex:
+                                    metavariable: $HAS
+                                    regex: ^(hasText|hasLength|isNotEmpty|isNotBlank|nonNull)$
+              - pattern-not-inside: |
+                  if ($COND) $S;
+              - pattern-not-inside: |
+                  if ($COND) $S;
+                  ...
+                  $X = $V;
+                  ...
+              - pattern: $X.$M(...)
+        # (5) 문자열 유틸리티로 값이 있음을 확인한 분기 안
+        - pattern-not-inside:
+            patterns:
+              - pattern: if ($COND) $S1;
+              - metavariable-pattern:
+                  metavariable: $COND
+                  patterns:
+                    - pattern-either:
+                        - patterns:
+                            - pattern: "!$UTIL.$EMPTY($X)"
+                            - metavariable-regex:
+                                metavariable: $EMPTY
+                                regex: ^(isEmpty|isBlank|isNull|isNullOrEmpty)$
+                        - patterns:
+                            - pattern: $UTIL.$HAS($X)
+                            - metavariable-regex:
+                                metavariable: $HAS
+                                regex: ^(hasText|hasLength|isNotEmpty|isNotBlank|nonNull)$
+                    # $WRAP(검사식을 품은 식)이 && 도 아니고 검사식 자체도 아니면 인정하지 않는다 (부정·||·|·?: 등)
+                    - pattern-not-inside:
+                        patterns:
+                          - pattern: $WRAP
+                          - pattern-not: $AND1 && $AND2
+                          - pattern-not:
+                              patterns:
+                                - pattern: "!$UTIL.$EMPTY($X)"
+                                - metavariable-regex:
+                                    metavariable: $EMPTY
+                                    regex: ^(isEmpty|isBlank|isNull|isNullOrEmpty)$
+                          - pattern-not:
+                              patterns:
+                                - pattern: $UTIL.$HAS($X)
+                                - metavariable-regex:
+                                    metavariable: $HAS
+                                    regex: ^(hasText|hasLength|isNotEmpty|isNotBlank|nonNull)$
+              - focus-metavariable: $S1
+        # (6) null 이면 예외를 던지는 검사
+        - pattern-not-inside: |
+            Objects.requireNonNull($X, ...);
+            ...

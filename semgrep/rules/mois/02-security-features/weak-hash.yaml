@@ -1,0 +1,26 @@
+rules:
+- id: mois-2-04-weak-hash
+  languages: [java]
+  severity: WARNING
+  message: "[행안부 보안기능] 취약한 암호화 알고리즘 사용: MD5·SHA-1 해시 (보안 용도가 아니면 예외 처리)"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "보안기능"
+    mois-item-no: "2-4"
+    mois-item: "취약한 암호화 알고리즘 사용"
+    cwe: "CWE-327"
+    gate: warn
+  patterns:
+    - pattern-either:
+        - pattern: java.security.MessageDigest.getInstance("$H", ...)
+        # 알고리즘을 설정에서 읽되, 설정이 없을 때 쓰는 기본값이 취약한 경우
+        - patterns:
+            # (선언 `String alg = ...` 과 대입 `alg = ...` 모두에 맞는다)
+            - pattern-inside: |
+                $V = $P.getProperty($K, "$H");
+                ...
+            - pattern: java.security.MessageDigest.getInstance($V, ...)
+    - metavariable-regex:
+        metavariable: $H
+        regex: (?i)^(MD2|MD4|MD5|SHA-?1|SHA)$

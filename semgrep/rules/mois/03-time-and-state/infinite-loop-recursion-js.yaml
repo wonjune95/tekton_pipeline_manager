@@ -1,0 +1,86 @@
+rules:
+- id: mois-3-02-infinite-loop-recursion-js
+  languages: [javascript, typescript]
+  severity: WARNING
+  message: "[행안부 시간 및 상태] 종료되지 않는 반복문 또는 재귀 함수: 빠져나오는 조건(break·return·throw 또는 재귀의 기저 조건)이 없음 — 반복·재귀 횟수를 제한하는 조건을 둘 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "시간 및 상태"
+    mois-item-no: "3-2"
+    mois-item: "종료되지 않는 반복문 또는 재귀 함수"
+    cwe: "CWE-674; CWE-835"
+    gate: warn
+  pattern-either:
+    # 무한 반복문: 반복문 안 어디에도 탈출 문장(break·return·throw·yield·process.exit)이 없음
+    - patterns:
+        - pattern-either:
+            - pattern: while (true) $S
+            - pattern: while (1) $S
+            - pattern: for (;;) $S
+            - pattern: |
+                do { ... } while (true);
+        # 탈출 문장은 // 주석이 아닌 코드에서만 찾는다 (줄에서 // 앞부분만 보고 \K 로 일치 시작을 낱말 위치로 옮긴다)
+        # ponytail: 안쪽 반복문의 break 도 탈출로 본다 (바깥 반복문은 끝나지 않는데 놓침). 글자로는 어느 반복문의 break 인지 가리지 못한다
+        - pattern-not-regex: (?m)^(?:(?!//)[^\n])*?\K\b(break|return|throw|yield|exit)\b
+    # 재귀 함수: 자신을 호출하는데 기저 조건이 될 제어문(if·조건식·&&·||·??·반복문·switch·try)이 없음
+    - patterns:
+        - pattern-either:
+            - patterns:
+                - pattern-either:
+                    - pattern-inside: |
+                        function $F(...) { ... }
+                    - pattern-inside: |
+                        $F = function (...) { ... }
+                    - pattern-inside: |
+                        $F = (...) => $BODY
+                # Semgrep 은 클래스 메서드도 function $F 에 맞춘다. 메서드 안의 맨 호출 f() 는 메서드가 아니라 바깥 함수를 부른다
+                - pattern-not-inside: |
+                    class $CLS { ... }
+                - pattern: $F(...)
+            - patterns:
+                - pattern-inside: |
+                    class $C { ... }
+                - pattern-inside: |
+                    $F(...) { ... }
+                - pattern: this.$F(...)
+        # 함수 최상위의 if 가운데 return·throw 로 빠져나가는 것이 있으면 기저 조건으로 본다
+        # (로그만 찍는 if 처럼 빠져나가지 않는 조건문은 기저 조건이 아니다)
+        - pattern-not-inside: |
+            function $F(...) { ... if ($IFC) { ... return ...; } ... }
+        - pattern-not-inside: |
+            function $F(...) { ... if ($IFC) return ...; ... }
+        - pattern-not-inside: |
+            function $F(...) { ... if ($IFC) { ... throw $X; } ... }
+        - pattern-not-inside: |
+            function $F(...) { ... if ($IFC) throw $X; ... }
+        - pattern-not-inside: |
+            $F(...) { ... if ($IFC) { ... return ...; } ... }
+        - pattern-not-inside: |
+            $F(...) { ... if ($IFC) return ...; ... }
+        - pattern-not-inside: |
+            $F(...) { ... if ($IFC) { ... throw $X; } ... }
+        - pattern-not-inside: |
+            $F(...) { ... if ($IFC) throw $X; ... }
+        - pattern-not-inside: |
+            $F = (...) => { ... if ($IFC) { ... return ...; } ... }
+        - pattern-not-inside: |
+            $F = (...) => { ... if ($IFC) return ...; ... }
+        # 호출 자체가 조건 안에 있음
+        - pattern-not-inside: if ($IFC) $S
+        - pattern-not-inside: '$TCOND ? $TYES : $TNO'
+        - pattern-not-inside: $AND1 && $AND2
+        - pattern-not-inside: $OR1 || $OR2
+        - pattern-not-inside: $NC1 ?? $NC2
+        - pattern-not-inside: for (...) $S
+        - pattern-not-inside: while ($WC) $S
+        - pattern-not-inside: |
+            switch ($SW) { ... }
+        - pattern-not-inside: |
+            try { ... } catch ($E) { ... }
+        - pattern-not-inside: |
+            try { ... } catch ($E) { ... } finally { ... }
+        # 콜백·타이머로 넘기는 호출(setTimeout(() => f()), promise.then(() => f()))은 호출 스택이 쌓이지 않는다
+        - pattern-not-inside: $CALLEE(..., () => $CB, ...)
+        - pattern-not-inside: $CALLEE(..., function (...) { ... }, ...)
+        - pattern-not-inside: $CALLEE(..., ($A, ...) => $CB, ...)

@@ -1,0 +1,46 @@
+rules:
+- id: mois-2-04-weak-cipher-py
+  languages: [python]
+  severity: ERROR
+  message: "[행안부 보안기능] 취약한 암호화 알고리즘 사용: DES·3DES·RC4·Blowfish 등 취약한 알고리즘 또는 ECB 모드 — AES(128비트 이상)·ARIA·SEED 를 GCM·CBC 등 안전한 운영 모드로 사용할 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "보안기능"
+    mois-item-no: "2-4"
+    mois-item: "취약한 암호화 알고리즘 사용"
+    cwe: "CWE-327"
+    gate: block
+  pattern-either:
+    # PyCryptodome (Crypto / Cryptodome)
+    - pattern: Crypto.Cipher.DES.new(...)
+    - pattern: Crypto.Cipher.DES3.new(...)
+    - pattern: Crypto.Cipher.ARC2.new(...)
+    - pattern: Crypto.Cipher.ARC4.new(...)
+    - pattern: Crypto.Cipher.Blowfish.new(...)
+    - pattern: Crypto.Cipher.CAST.new(...)
+    - pattern: Crypto.Cipher.XOR.new(...)
+    - pattern: Cryptodome.Cipher.DES.new(...)
+    - pattern: Cryptodome.Cipher.DES3.new(...)
+    - pattern: Cryptodome.Cipher.ARC2.new(...)
+    - pattern: Cryptodome.Cipher.ARC4.new(...)
+    - pattern: Cryptodome.Cipher.Blowfish.new(...)
+    - pattern: Cryptodome.Cipher.CAST.new(...)
+    # ECB 모드: AES.new(key, AES.MODE_ECB)
+    - pattern: $C.new($KEY, $M.MODE_ECB, ...)
+    - pattern: $C.new($KEY, mode=$M.MODE_ECB, ...)
+    # cryptography
+    - pattern: cryptography.hazmat.primitives.ciphers.algorithms.TripleDES(...)
+    - pattern: cryptography.hazmat.primitives.ciphers.algorithms.Blowfish(...)
+    - pattern: cryptography.hazmat.primitives.ciphers.algorithms.ARC4(...)
+    - pattern: cryptography.hazmat.primitives.ciphers.algorithms.IDEA(...)
+    - pattern: cryptography.hazmat.primitives.ciphers.algorithms.CAST5(...)
+    - pattern: cryptography.hazmat.decrepit.ciphers.algorithms.TripleDES(...)
+    - pattern: cryptography.hazmat.decrepit.ciphers.algorithms.Blowfish(...)
+    - pattern: cryptography.hazmat.decrepit.ciphers.algorithms.ARC4(...)
+    - pattern: cryptography.hazmat.decrepit.ciphers.algorithms.IDEA(...)
+    - pattern: cryptography.hazmat.decrepit.ciphers.algorithms.CAST5(...)
+    - pattern: cryptography.hazmat.primitives.ciphers.modes.ECB(...)
+    # pyDes
+    - pattern: pyDes.des(...)
+    - pattern: pyDes.triple_des(...)

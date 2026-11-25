@@ -1,0 +1,28 @@
+rules:
+- id: mois-6-04-public-data-to-private-array
+  languages: [java]
+  severity: WARNING
+  message: "[행안부 캡슐화] Private 배열에 Public 데이터 할당: public 메서드의 배열 인자를 private 배열 필드에 그대로 저장함 — 외부에서 계속 바꿀 수 있으니 복사본을 만들어 저장할 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "캡슐화"
+    mois-item-no: "6-4"
+    mois-item: "Private 배열에 Public 데이터 할당"
+    cwe: "CWE-496"
+    gate: warn
+  patterns:
+    - pattern-either:
+        - pattern-inside: |
+            class $C { ... private $T[] $F; ... }
+        - pattern-inside: |
+            class $C { ... private $T[] $F = $I; ... }
+    # public 메서드 또는 public 생성자의 배열 인자
+    - pattern-either:
+        - pattern-inside: |
+            public $RET $M(..., $T[] $P, ...) { ... }
+        - pattern-inside: |
+            public $C(..., $T[] $P, ...) { ... }
+    - pattern-either:
+        - pattern: this.$F = $P;
+        - pattern: $F = $P;

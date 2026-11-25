@@ -1,0 +1,52 @@
+rules:
+- id: mois-2-12-persistent-cookie-py
+  languages: [python]
+  severity: WARNING
+  message: "[행안부 보안기능] 사용자 하드디스크에 저장되는 쿠키를 통한 정보 노출: 쿠키·세션 만료시간이 하루(86400초)를 넘는 영속 쿠키 — 만료시간을 최소로 줄이거나 세션 쿠키(만료 미지정)로 두고, 쿠키에 중요정보를 저장하지 말 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "보안기능"
+    mois-item-no: "2-12"
+    mois-item: "사용자 하드디스크에 저장되는 쿠키를 통한 정보 노출"
+    cwe: "CWE-539"
+    gate: warn
+  # 진단가이드 예: 60*60*24*365(1년)는 취약, 60*60*24(1일)는 안전. 상수 값만 본다 (변수로 넘기면 놓침)
+  pattern-either:
+    # set_cookie(key, value, max_age) — Django·Flask·FastAPI(Starlette) 모두 세 번째 인자가 max_age.
+    # Starlette 는 expires 에도 초 단위 정수를 받는다
+    - patterns:
+        - pattern-either:
+            - pattern: $R.set_cookie(..., max_age=$N, ...)
+            - pattern: $R.set_cookie(..., expires=$N, ...)
+            - pattern: $R.set_cookie($K, $V, $N, ...)
+            - pattern: $R.set_signed_cookie(..., max_age=$N, ...)
+            - pattern: $REQ.session.set_expiry($N)
+            - pattern: SESSION_COOKIE_AGE = $N
+            - pattern: PERMANENT_SESSION_LIFETIME = $N
+            - pattern: $APP.config["PERMANENT_SESSION_LIFETIME"] = $N
+            - pattern: $APP.permanent_session_lifetime = $N
+        - metavariable-comparison:
+            metavariable: $N
+            comparison: $N > 86400
+    # timedelta 로 준 만료: max_age=timedelta(days=30), expires=now + timedelta(days=365), timedelta(weeks=2)
+    - patterns:
+        - pattern-either:
+            - pattern: $R.set_cookie(..., $KW=$EXP, ...)
+            - pattern: $R.set_signed_cookie(..., $KW=$EXP, ...)
+            - pattern: $REQ.session.set_expiry($EXP)
+            - pattern: PERMANENT_SESSION_LIFETIME = $EXP
+            - pattern: $APP.config["PERMANENT_SESSION_LIFETIME"] = $EXP
+            - pattern: $APP.permanent_session_lifetime = $EXP
+            - pattern: REMEMBER_COOKIE_DURATION = $EXP
+        - metavariable-pattern:
+            metavariable: $EXP
+            pattern-either:
+                - patterns:
+                    - pattern-either:
+                        - pattern: datetime.timedelta(..., days=$D, ...)
+                        - pattern: datetime.timedelta($D, ...)
+                    - metavariable-comparison:
+                        metavariable: $D
+                        comparison: $D > 1
+                - pattern: datetime.timedelta(..., weeks=$W, ...)

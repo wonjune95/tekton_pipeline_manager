@@ -1,0 +1,44 @@
+rules:
+- id: mois-6-02-debug-code
+  languages: [java]
+  severity: WARNING
+  message: "[행안부 캡슐화] 제거되지 않고 남은 디버그 코드: 테스트용 main() 메서드나 콘솔 출력(System.out·err)이 남아 있음 — 배포 전에 지우고 필요한 기록은 로거로 남길 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "캡슐화"
+    mois-item-no: "6-2"
+    mois-item: "제거되지 않고 남은 디버그 코드"
+    cwe: "CWE-489"
+    gate: warn
+  pattern-either:
+    # 웹 응용프로그램의 main() — Spring Boot 시작 클래스는 제외
+    - patterns:
+        - pattern-either:
+            - pattern: |
+                public static void main(String[] $ARGS) { ... }
+            - pattern: |
+                public static void main(String... $ARGS) { ... }
+        - pattern-not: |
+            public static void main(String[] $ARGS) { ... SpringApplication.run(...); ... }
+        # (인자 없는 @SpringBootApplication 도 이 형태에 맞는다)
+        - pattern-not-inside: |
+            @SpringBootApplication(...)
+            class $C { ... }
+    # 콘솔 출력 — main() 안(위에서 잡음)과 잡은 예외를 출력하는 경우(4-1 오류 메시지 정보노출)는 제외
+    - patterns:
+        - pattern: System.$OUT.$PRINT(...)
+        - metavariable-regex:
+            metavariable: $OUT
+            regex: ^(out|err)$
+        - pattern-not-inside: |
+            public static void main(String[] $ARGS) { ... }
+        - pattern-not:
+            patterns:
+              # (try-with-resources 도 첫 형태에 맞는다. finally 가 붙은 try 만 따로 둔다)
+              - pattern-either:
+                  - pattern-inside: |
+                      try { ... } catch ($T $E) { ... }
+                  - pattern-inside: |
+                      try { ... } catch ($T $E) { ... } finally { ... }
+              - pattern: System.$OUT.$PRINT(..., <... $E ...>, ...)

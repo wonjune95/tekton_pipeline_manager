@@ -1,0 +1,43 @@
+rules:
+- id: mois-2-05-cleartext-transport-js
+  languages: [javascript, typescript]
+  severity: WARNING
+  message: "[행안부 보안기능] 암호화되지 않은 중요정보: 암호화되지 않은 채널(http://·ws://)로 요청함 — 중요정보를 주고받으면 https://·wss:// 를 사용할 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "보안기능"
+    mois-item-no: "2-5"
+    mois-item: "암호화되지 않은 중요정보"
+    cwe: "CWE-319"
+    gate: warn
+  # 평문 전송만 본다 (무엇을 보내는지는 보지 않음 → warn). 중요정보의 평문 저장은 규칙을 두지 않는다 (수동 점검)
+  # URL 이 http:// 로 시작하는 문자열·템플릿 리터럴·문자열 연결("http://" + host)일 때만 본다. 변수로 넘기면 놓침
+  # 참고: semgrep-rules javascript/lang/security/detect-insecure-websocket.yaml
+  patterns:
+    - pattern-either:
+        # fetch(url), axios(url), got(url), request(url) (window.fetch 포함)
+        - patterns:
+            - pattern: $F($URL, ...)
+            - metavariable-regex:
+                metavariable: $F
+                regex: ^((window|globalThis|self)\.)?(fetch|axios|got|request|needle|superagent)$
+        # axios.get(url) · http.request(url) · $http.post(url) · this.http.get(url) · got.post(url) 등
+        - patterns:
+            - pattern: $S.$M($URL, ...)
+            - metavariable-regex:
+                metavariable: $M
+                regex: ^(get|post|put|patch|delete|head|options|request|fetch)$
+        # axios.request({ url }), axios({ url }), axios.create({ baseURL }), $.ajax({ url })
+        - pattern: |
+            $F({..., url: $URL, ...}, ...)
+        - pattern: |
+            $F({..., baseURL: $URL, ...}, ...)
+        # WebSocket·EventSource
+        - pattern: new WebSocket($URL, ...)
+        - pattern: new EventSource($URL, ...)
+    # 같은 호스트만 제외: localhost 뒤에는 포트(숫자·${…})·경로·끝만 올 수 있다 (http://localhost:x@다른호스트/ 는 다른 호스트다)
+    - metavariable-regex:
+        metavariable: $URL
+        regex: (?i)^["'`](http|ws)://(?!(localhost|127\.0\.0\.1|\[::1\])(:(\d+|\$\{[^}]*\}))?([/?#"'`]|$)).+
+    - focus-metavariable: $URL

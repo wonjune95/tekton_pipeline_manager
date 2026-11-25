@@ -1,0 +1,53 @@
+rules:
+- id: mois-1-08-xxe-js
+  languages: [javascript, typescript]
+  severity: WARNING
+  message: "[행안부 입력데이터 검증 및 표현] 부적절한 XML 외부개체 참조(설정 점검): libxml 계열 파서에서 엔티티 치환(noent·XML_PARSE_NOENT)이나 외부 DTD 읽기(dtdload·XML_PARSE_DTDLOAD)를 켬 — 외부 엔티티로 서버 파일·내부 주소를 읽을 수 있다. 읽는 문서가 외부 입력인지는 확인하지 않으므로, 신뢰할 수 없는 XML 을 읽는 곳이면 이 옵션을 빼거나 false 로 둘 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "입력데이터 검증 및 표현"
+    mois-item-no: "1-8"
+    mois-item: "부적절한 XML 외부개체 참조"
+    cwe: "CWE-611"
+    gate: warn
+  # 참고: semgrep-rules javascript/express/security/audit/express-libxml-noent.yaml
+  # 대상: libxmljs · libxmljs2 의 parseXml · parseXmlString · parseXmlAsync 에 { noent: true } · { dtdload: true } (리터럴 또는 같은 함수의 변수),
+  #       libxml2-wasm 의 ParseOption.XML_PARSE_NOENT · XML_PARSE_DTDLOAD.
+  # 대상 아님: xml2js · sax · fast-xml-parser · @xmldom/xmldom · node-expat 는 외부 엔티티를 읽지 않는다 (기본값으로 안전).
+  # Java · Python 과 같이 입력의 흐름은 보지 않는 설정 점검이라 warn.
+  # 한계: 옵션 객체를 다른 함수 · 모듈에서 만들거나 vm 코드 문자열 안에서 파싱하면 보지 못한다.
+  pattern-either:
+    - patterns:
+        - pattern-either:
+            - pattern: libxmljs.$PARSE(...)
+            - pattern: libxmljs2.$PARSE(...)
+            - patterns:
+                - pattern-either:
+                    - pattern-inside: |
+                        import $L from "libxmljs";
+                        ...
+                    - pattern-inside: |
+                        import $L from "libxmljs2";
+                        ...
+                - pattern: $L.$PARSE(...)
+        - metavariable-regex:
+            metavariable: $PARSE
+            regex: ^(parseXml|parseXmlString|parseXmlAsync)$
+        - pattern-either:
+            - pattern: '$CALL($D, {..., $OPT: true, ...}, ...)'
+            - patterns:
+                - pattern-inside: |
+                    $O = {..., $OPT: true, ...};
+                    ...
+                - pattern: $CALL($D, $O, ...)
+        - metavariable-regex:
+            metavariable: $OPT
+            regex: ^["']?(noent|dtdload)["']?$
+    - patterns:
+        - pattern-either:
+            - pattern: $W.ParseOption.$FLAG
+            - pattern: ParseOption.$FLAG
+        - metavariable-regex:
+            metavariable: $FLAG
+            regex: ^XML_PARSE_(NOENT|DTDLOAD)$

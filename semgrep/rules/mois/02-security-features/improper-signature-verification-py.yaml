@@ -1,0 +1,52 @@
+rules:
+- id: mois-2-10-improper-signature-verification-py
+  languages: [python]
+  severity: WARNING
+  message: "[행안부 보안기능] 부적절한 전자서명 확인: 전자서명을 확인하지 않거나 검증 결과를 쓰지 않음 — JWT 는 jwt.decode(token, key, algorithms=[\"HS256\"·\"RS256\" 등])로 서명을 검증하고(verify_signature=False·\"none\" 금지), 서명 검증 실패(예외·False)는 반드시 거부로 처리할 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "보안기능"
+    mois-item-no: "2-10"
+    mois-item: "부적절한 전자서명 확인"
+    cwe: "CWE-347"
+    gate: warn
+  pattern-either:
+    # 서명을 검증하지 않고 JWT 를 받아들인다 (PyJWT 1.x verify=False, PyJWT 2.x options, python-jose)
+    - pattern: jwt.decode(..., verify=False, ...)
+    - pattern: |
+        {..., "verify_signature": False, ...}
+    - pattern: jose.jwt.get_unverified_claims(...)
+    - pattern: jose.jws.get_unverified_claims(...)
+    # 서명 없는 토큰(alg=none)을 허용
+    - patterns:
+        - pattern-either:
+            - pattern: jwt.decode(..., algorithms=[..., "$ALG", ...], ...)
+            - pattern: jwt.decode(..., algorithms=(..., "$ALG", ...), ...)
+            - pattern: jwt.decode(..., algorithms="$ALG", ...)
+            - pattern: jwt.encode(..., algorithm="$ALG", ...)
+        - metavariable-regex:
+            metavariable: $ALG
+            regex: (?i)^none$
+    # 서명 검증 실패 예외를 무시한다
+    # (except X as e: 는 Semgrep 에서 다른 모양이라 따로 적는다. except (..., X, ...): 는 except X: 에도 맞는다)
+    - patterns:
+        - pattern-either:
+            - pattern: |
+                try:
+                  ...
+                except $EXC as $E:
+                  pass
+            - pattern: |
+                try:
+                  ...
+                except (..., $EXC, ...):
+                  pass
+        # 이름 일부만 맞으면 된다: InvalidSignature 는 PyJWT 의 InvalidSignatureError 도,
+        # SignatureError 는 ExpiredSignatureError·JWSSignatureError 도 잡는다
+        - metavariable-regex:
+            metavariable: $EXC
+            regex: ^.*(InvalidSignature|BadSignature|SignatureError|SignatureExpired|InvalidTokenError|JWTError|DecodeError).*$
+    # 검증 결과(True/False)를 쓰지 않고 버린다: 문장으로만 호출한 hmac.compare_digest, PyCrypto 식 verify()
+    - pattern-regex: (?m)^[ \t]*hmac\.compare_digest\([^\n]*\)[ \t]*$
+    - pattern-regex: (?m)^[ \t]*(PKCS1_v1_5|PKCS1_PSS)\.new\([^\n]*\)\.verify\([^\n]*\)[ \t]*$

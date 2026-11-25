@@ -1,0 +1,31 @@
+rules:
+- id: mois-1-11-csrf-js
+  languages: [javascript, typescript]
+  severity: WARNING
+  message: "[행안부 입력데이터 검증 및 표현] 크로스사이트 요청 위조: CSRF 보호를 명시적으로 끔(Angular HttpClientXsrfModule.disable()·withNoXsrfProtection(), csurf ignoreMethods 에 POST·PUT·PATCH·DELETE) — 쿠키·세션으로 인증하는 화면이면 CSRF 토큰 보호를 켜 두고, 토큰(Authorization 헤더) 인증 API 만 예외로 둘 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "입력데이터 검증 및 표현"
+    mois-item-no: "1-11"
+    mois-item: "크로스사이트 요청 위조"
+    cwe: "CWE-352"
+    gate: warn
+  # Express · Koa · Fastify · NestJS 는 CSRF 보호가 기본으로 없어 "보호가 없음"은 코드만으로 판단할 수 없다
+  # (미들웨어 · 프록시 · SameSite 쿠키 · 토큰 인증에 달려 있다 — 수동 점검). 여기서는 켜 둔 보호를 끄는 명시적 설정만 본다.
+  # 인증 방식에 따라 문제가 아닐 수 있어 warn.
+  pattern-either:
+    - pattern: HttpClientXsrfModule.disable()
+    - pattern: withNoXsrfProtection()
+    - patterns:
+        - pattern-either:
+            - pattern-inside: |
+                $C = require("csurf");
+                ...
+            - pattern-inside: |
+                import $C from "csurf";
+                ...
+        - pattern: '$C({..., ignoreMethods: $M, ...})'
+        - metavariable-regex:
+            metavariable: $M
+            regex: (?is).*["'](POST|PUT|PATCH|DELETE)["']

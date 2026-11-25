@@ -1,0 +1,22 @@
+rules:
+- id: mois-2-13-sensitive-comment
+  languages: [java]
+  severity: WARNING
+  message: "[행안부 보안기능] 주석문 안에 포함된 시스템 주요정보: 주석에 계정·비밀번호로 보이는 값이 있음 (실제 값이면 삭제)"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "보안기능"
+    mois-item-no: "2-13"
+    mois-item: "주석문 안에 포함된 시스템 주요정보"
+    cwe: "CWE-615"
+    gate: warn
+  # 주석(//, /* , 줄 머리 *)에서만 찾는다. http:// 같은 문자열 안의 // 는 제외
+  # ponytail: 정규식 휴리스틱. 값에 숫자·특수문자가 있거나 따옴표로 감싼 경우만 잡는다
+  pattern-either:
+    # "비밀번호 : a1b2c3!", "암호화 전, 후 : 1365ADMIN_01"
+    - pattern-regex: (?im)(?<![:"'])(//|/\*|^\s*\*)[^\n]*?(password|passwd|pwd|비밀번호|패스워드|암호)[^\n]{0,30}?(\bis\b|=|:|은|는)\s*["'“‘]?(?![$%{<])(?![*xX.]+\s)(?=[^\s"'”’]*[0-9!@#$%^&*])[^\s"'”’]{4,}
+    # Password for administrator is "tiger."
+    - pattern-regex: (?im)(?<![:"'])(//|/\*|^\s*\*)[^\n]*?(password|passwd|pwd|비밀번호|패스워드|암호)[^\n]{0,30}?(\bis\b|=|:|은|는)\s*["“'‘][^"”'’\s]{3,}["”'’]
+    # DB연결 root / a1q2w3r3f2!@
+    - pattern-regex: (?i)(?<![:"'])(//|/\*)[^\n]*\b(root|admin|sa|sys|system|scott|test|user)\s*/\s*[^\s/]*[0-9!@#$%^&*][^\s/]*

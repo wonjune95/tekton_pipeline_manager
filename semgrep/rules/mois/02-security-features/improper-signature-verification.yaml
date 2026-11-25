@@ -1,0 +1,42 @@
+rules:
+- id: mois-2-10-improper-signature-verification
+  languages: [java]
+  severity: WARNING
+  message: "[행안부 보안기능] 부적절한 전자서명 확인: 전자서명을 확인하지 않거나 검증 결과를 쓰지 않음 — JarFile(f, true) 와 getCodeSigners() 로 서명 주체를, JWT 는 서명 검증(parseClaimsJws·verify) 후 사용할 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "보안기능"
+    mois-item-no: "2-10"
+    mois-item: "부적절한 전자서명 확인"
+    cwe: "CWE-347"
+    gate: warn
+  # JarFile 은 자체 클래스패스를 읽는 등 서명이 필요 없는 용도도 있어 warn 으로 둔다.
+  pattern-either:
+    # 서명 확인 없이 JAR 를 연다 (진단가이드 코드 예)
+    - pattern: new java.util.jar.JarFile($F)
+    - pattern: new java.util.jar.JarFile($F, false)
+    # 서명 확인 생성자를 썼지만 서명 주체를 검증하지 않는다 (진단가이드 정탐 예)
+    - patterns:
+        - pattern: new java.util.jar.JarFile($F, true, ...)
+        - pattern-not-inside: |
+            $RET $METHOD(...) {
+              ...
+              <... $E.getCodeSigners() ...>;
+              ...
+            }
+    # 서명 없는(또는 검증 안 된) JWT 를 받아들인다
+    - pattern: $P.parseClaimsJwt(...)
+    - pattern: $P.parseUnsecuredClaims(...)
+    - pattern: io.jsonwebtoken.Jwts.parser(). ... .parse($T)
+    - pattern: io.jsonwebtoken.Jwts.parserBuilder(). ... .parse($T)
+    - patterns:
+        - pattern: com.auth0.jwt.JWT.decode($T)
+        - pattern-not-inside: |
+            $RET $METHOD(...) {
+              ...
+              <... $V.verify(...) ...>;
+              ...
+            }
+    # 서명 검증 결과(boolean)를 버린다
+    - pattern: (java.security.Signature $S).verify(...);

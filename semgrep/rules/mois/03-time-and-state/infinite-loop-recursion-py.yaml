@@ -1,0 +1,98 @@
+rules:
+- id: mois-3-02-infinite-loop-recursion-py
+  languages: [python]
+  severity: WARNING
+  message: "[행안부 시간 및 상태] 종료되지 않는 반복문 또는 재귀 함수: 빠져나오는 조건(break·return·raise 또는 재귀의 기저 조건)이 없음 — 반복·재귀 횟수를 제한하는 조건을 둘 것"
+  metadata:
+    rule-type: mois
+    mois-guide: "2021 소프트웨어 보안약점 진단가이드"
+    mois-category: "시간 및 상태"
+    mois-item-no: "3-2"
+    mois-item: "종료되지 않는 반복문 또는 재귀 함수"
+    cwe: "CWE-674; CWE-835"
+    gate: warn
+  pattern-either:
+    # 무한 반복문: 반복문 안 어디에도 탈출 문장(break·return·raise·yield·exit)이 없음
+    - patterns:
+        - pattern-either:
+            - pattern: |
+                while True:
+                    ...
+            - pattern: |
+                while 1:
+                    ...
+        # 탈출 문장은 주석이 아닌 코드에서만 찾는다 (줄에서 # 앞부분만 보고 \K 로 일치 시작을 낱말 위치로 옮긴다)
+        # ponytail: 안쪽 반복문의 break 도 탈출로 본다 (바깥 반복문은 끝나지 않는데 놓침). 글자로는 어느 반복문의 break 인지 가리지 못한다
+        - pattern-not-regex: (?m)^[^#\n]*\K\b(break|return|raise|yield|exit|_exit)\b
+    # 재귀 함수: 자신을 호출하는데 기저 조건이 될 제어문(if·조건식·반복문)이 없음
+    - patterns:
+        - pattern-either:
+            - patterns:
+                - pattern-inside: |
+                    def $F(...):
+                        ...
+                - pattern-not-inside: |
+                    def $F(self, ...):
+                        ...
+                - pattern-not-inside: |
+                    def $F(cls, ...):
+                        ...
+                - pattern: $F(...)
+            - patterns:
+                - pattern-inside: |
+                    def $F(self, ...):
+                        ...
+                - pattern: self.$F(...)
+        # 기저 조건이 될 수 있는 제어문이 있으면 제외 (진단가이드: 제어문으로 빠져나올 수 있으면 안전)
+        # 함수 최상위의 if 가운데 return·raise 로 빠져나가는 것이 있을 때만 기저 조건으로 본다
+        # (로그만 찍는 if 처럼 빠져나가지 않는 조건문은 기저 조건이 아니다. 'return ...' 은 값 없는 return 에도 맞는다)
+        - pattern-not-inside: |
+            def $F(...):
+                ...
+                if $IFC:
+                    ...
+                    return ...
+                ...
+        - pattern-not-inside: |
+            def $F(...):
+                ...
+                if $IFC:
+                    ...
+                    raise ...
+                ...
+        - pattern-not-inside: |
+            def $F(...):
+                ...
+                if $IFC:
+                    ...
+                else:
+                    ...
+                    return ...
+                ...
+        - pattern-not-inside: |
+            def $F(...):
+                ...
+                if $IFC:
+                    ...
+                else:
+                    ...
+                    raise ...
+                ...
+        - pattern-not-inside: |
+            if $IFC:
+                ...
+        - pattern-not-inside: $TYES if $TCOND else $TNO
+        - pattern-not-inside: $AND1 and $AND2
+        - pattern-not-inside: $OR1 or $OR2
+        - pattern-not-inside: |
+            for $FV in $FI:
+                ...
+        - pattern-not-inside: |
+            while $WC:
+                ...
+        # 'except ...' 은 except E / except E as e / except (A, B) / except: 에 모두 맞는다
+        - pattern-not-inside: |
+            try:
+                ...
+            except ...:
+                ...
