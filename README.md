@@ -648,6 +648,36 @@ kubectl apply -f my-sonarqube-scanner-custom.yaml -n tekton-catalog
 
 ---
 
+## Semgrep 보안점검 (행안부 보안약점)
+
+`code-analysis` 단계(Task `sonarqube-scanner`)는 SonarQube 분석 전에 Semgrep 을 먼저 돌립니다. 항상 켜져 있습니다.
+
+```
+semgrep-scan → sonar-properties-create → sonar-scan
+```
+
+- Semgrep 은 **검사만** 합니다. 탐지 결과(SARIF)를 SonarQube 가 외부 이슈로 함께 올리고, 통과·실패는 **SonarQube 품질게이트**가 정합니다.
+- 품질게이트 결과로 **빌드를 막지는 않습니다**(Task 파라미터 `SONAR_QUALITYGATE_WAIT` 기본 `"false"`). 품질게이트 FAILED 일 때 빌드를 실패시키려면 이 기본값을 `"true"` 로 바꿉니다.
+- Semgrep 단계는 **빌드를 막지 않습니다.** 스캔이 실패하면 로그에 크게 알리고 Semgrep 결과 없이 SonarQube 분석을 계속합니다.
+  성공·실패는 TaskRun 결과 `semgrep-status`(ok · failed · disabled)로 남습니다.
+- **규칙은 Semgrep 이미지 안에 들어 있습니다** (`security-rules` 저장소의 `Dockerfile` 로 빌드, 이미지 태그 = 규칙 버전). 실행 중에 Gitea 에 접근하지 않습니다.
+- Semgrep 이 탐지한 파일(MyBatis 매퍼 XML 등)은 `sonar.inclusions` 에 자동으로 덧붙어, SonarQube 에서 파일·줄 위치가 유지됩니다.
+- SonarQube 화면에서는 규칙 필터 `Semgrep OSS` 로 보이고, 건별 오탐 처리는 SonarQube 에서 하면 재분석 후에도 유지됩니다.
+
+설정은 **Task 안의 기본값**으로만 둡니다. 파이프라인·PipelineRun 에는 관련 파라미터가 없습니다.
+
+| Task 파라미터 | 기본값 | 설명 |
+|---|---|---|
+| `SEMGREP_ENABLED` | `"true"` | 끄려면 Task 의 이 기본값을 `"false"` 로 바꿉니다 |
+| `SEMGREP_IMAGE` | `{image_registry}/nnd/tekton-cicd/semgrep-mois:v0.7.0@sha256:d761e3b3…` | Semgrep CE 1.180.0 + 규칙 v0.7.0 (Java·Python·JS·TS) |
+| `SEMGREP_TIMEOUT_SEC` | `900` | 스캔 제한 시간 |
+
+규칙을 올리는 순서: `security-rules` 에서 회귀시험 통과 → 태그 → `docker build --build-arg RULESET_VERSION="<태그> <커밋>"` → 레지스트리에 올림 → 이 Task 의 `SEMGREP_IMAGE` 를 새 digest 로 바꿈.
+
+> **필요한 것**: 레지스트리에 `nnd/tekton-cicd/semgrep-mois` 이미지 하나. 폐쇄망 반입도 이 이미지와 Task 만 있으면 됩니다.
+
+---
+
 ## 결과물 구조 예시
 
 ```
